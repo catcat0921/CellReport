@@ -1573,6 +1573,21 @@ export function pivot(data) {
     });
     return result;
 }
+import * as export_excel from './export_excel.js'
+export  async function exceljs_exec(_this,name_lable_map,excel_wb=undefined,allSheetNames=undefined){
+    return await export_excel.exceljs_inner_exec(_this,name_lable_map,excel_wb,allSheetNames)
+}
+import * as report_api from '../api/report_api.js'
+export  function data_to_showReport(_this,response_data){
+    return report_api.data_to_show(_this,response_data)
+}
+export function delay(ms,value=null) {
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            resolve(value);
+        }, ms);
+    });
+}
 export function isMobile(){
     let flag = navigator.userAgent.match(/(phone|pad|pod|iPhone|iPod|ios|iPad|Android|Mobile|BlackBerry|IEMobile|MQQBrowser|JUC|Fennec|wOSBrowser|BrowserNG|WebOS|Symbian|Windows Phone)/i)
     return flag!=null && flag.length>0;

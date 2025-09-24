@@ -510,7 +510,7 @@ export default class ResultGrid2HtmlTable{
         if(this.optimize){
             if(rowNo>=this.param_grid.extend_lines[0] && rowNo<=this.param_grid.extend_lines[1]){
                 let t=config_merge[`${this.param_grid.extend_lines[0]}_${colNo}`]
-                return 
+                return t
             }
             else
                 return config_merge[`${rowNo}_${colNo}`]
@@ -526,12 +526,16 @@ export default class ResultGrid2HtmlTable{
 
     _inner_table(s_row,e_row,col_arr,gutter){
         let {name,tableData,extend_lines,rowlenArr,hyperlink,
-            columnlenArr,styles,loc_style,colName_lines,my_sort,
+            columnlenArr,styles,loc_style,colName_lines,my_sort,optimize,
             config_merge,reportDefaultCss} ={...this.param_grid}
         let sb = new StringBuilder();  
         let table_height=0
         let table_width=0
-        if(e_row>=extend_lines[1] && extend_lines[1]>extend_lines[0])
+        if(optimize && e_row>=extend_lines[1] && extend_lines[1]>extend_lines[0])
+        {
+            e_row=tableData.length
+        }
+        if(e_row==undefined || isNaN(e_row) )
             e_row=tableData.length
         for(let i =s_row;i<e_row;i++)
         {
@@ -702,14 +706,14 @@ export default class ResultGrid2HtmlTable{
         if(!this.param_grid.optimize && this.param_grid.row_page_break_set.length>0){
             s_row=cur_page==1?this.fix_rows:this.param_grid.row_page_break_set[cur_page - 2]
             
-            if(cur_page==this.param_grid.row_page_break_set.length+1)
-                e_row=this.param_grid.tableData.length
-            else
+            //if(cur_page==this.param_grid.row_page_break_set.length+1)
+            //    e_row=this.param_grid.tableData.length
+            //else
                 e_row=this.param_grid.row_page_break_set[cur_page-1]
         }else{
             s_row=this.fix_rows +(cur_page-1)*page_size
             e_row=this.param_grid.need_footer? Math.min(this.fix_rows +cur_page*page_size ,this.param_grid.extend_lines[1]+1 )
-                : this.fix_rows +cur_page*page_size 
+                : this.fix_rows +cur_page*page_size             
         }
         // body 
         table_obj=this._inner_table(s_row,e_row,col_arr)
@@ -728,7 +732,7 @@ export default class ResultGrid2HtmlTable{
             sb.append(footer_obj.sb.toString(''))
             height=height+footer_obj.table_height
         }
-        if(this.param_grid.optimize || this.fix_cols>=0)
+        if(!window.cellreport.fix_col_hide && ( this.param_grid.optimize || this.fix_cols>=0))
         {
             // 固定列，header
             table_obj=this._inner_table(start_row,this.fix_rows,  build_col_arr(0,this.fix_cols))
@@ -771,8 +775,13 @@ export default class ResultGrid2HtmlTable{
             }catch{}
         }
         let grid_id=this.param_grid.name
+        let css_cache={}
         function inner_append_css(idx,head,foot,one,two){
-            sb.append(`
+            if(css_cache[idx+1])
+                return
+            css_cache[idx+1]=
+            //sb.append
+            (`
                     #cr_id_${grid_id} tr[isColumn]  td[data-c${idx>=0?'="'+idx+'"':''}] {background-color:${head.bc};color:${head.fc}; border: 1px solid #bdbcbc;}
                     #cr_id_${grid_id} tr[isComment]:not([isAfterExtend] ) td[data-c${idx>=0?'="'+idx+'"':''}] {background-color:${foot.bc};border: 1px solid #bdbcbc;}
                     #cr_id_${grid_id} tr:nth-child(odd)[Detail]  td[data-c${idx>=0?'="'+idx+'"':''}] {background-color:${one.bc}; color:${one.fc};   border: 1px solid #bdbcbc;}
@@ -801,6 +810,7 @@ export default class ResultGrid2HtmlTable{
             }
             
         })
+        sb.append(Object.values(css_cache).join("\n"))
         //sb.append("\n</style>\n")  
         //sb.append("<style >\n")
         Object.entries(this.param_grid.styles).forEach(([key, value])=>{
@@ -816,32 +826,32 @@ export default class ResultGrid2HtmlTable{
                 $(this).addClass('active-row');
             });
         */
-        sb.append(".reportDefaultCss{").append(this.param_grid.reportDefaultCss)
+        sb.append(`#cr_id_${grid_id}.reportDefaultCss{`).append(this.param_grid.reportDefaultCss)
         .append(`}
-        tr.hover-row>td ${window.cellreport.cr_hover_row||'{background-color:lightgray!important;}'}
-        tr.active-row>td  ${window.cellreport.cr_active_row || '{background-color: #7cbcfc!important;}'}
-            .cr-cell {margin: 0;box-sizing: border-box;
+        #cr_id_${grid_id} tr.hover-row>td ${window.cellreport.cr_hover_row||'{background-color:lightgray!important;}'}
+        #cr_id_${grid_id} tr.active-row>td  ${window.cellreport.cr_active_row || '{background-color: #7cbcfc!important;}'}
+            #cr_id_${grid_id} .cr-cell {margin: 0;box-sizing: border-box;
                 padding: 0 2px;
                 white-space: wrap;
-                word-wrap: normal;
+                word-wrap: ${this.param_grid.auto_line_height?'break-word':'normal'};
                 overflow: hidden; 
             }
-            .cr-sort .cr-sort-icon {
+            #cr_id_${grid_id} .cr-sort .cr-sort-icon {
                 display: inline;
                 padding: 0 13px 0 0;
                 background: url(img/datagrid_icons.png) no-repeat -64px center;
             }
-            .cr-sort-asc .cr-sort-icon {
+            #cr_id_${grid_id} .cr-sort-asc .cr-sort-icon {
                 display: inline;
                 padding: 0 13px 0 0;
                 background: url(img/datagrid_icons.png) no-repeat 0px center;
             }
-            .cr-sort-desc .cr-sort-icon {
+            #cr_id_${grid_id} .cr-sort-desc .cr-sort-icon {
                 display: inline;
                 padding: 0 13px 0 0;
                 background: url(img/datagrid_icons.png) no-repeat -16px center;
             }
-            .cr_tree_node {
+            #cr_id_${grid_id} .cr_tree_node {
                 display: inline-block;
             }
             `)

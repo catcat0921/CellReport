@@ -156,7 +156,7 @@ function find_config_merge(result_tbl,rowNo,colNo){
   if(optimize){
       if(rowNo>=extend_lines[0] && rowNo<=extend_lines[1]){
           let t=config_merge[`${extend_lines[0]}_${colNo}`]
-          return 
+          return t
       }
       else
           return config_merge[`${rowNo}_${colNo}`]
@@ -169,6 +169,60 @@ function find_config_merge(result_tbl,rowNo,colNo){
       }
   }
 }  
+function calculateRichTextLines(html, cellWidth, fontStyle = {}) {
+  // 默认字体样式（Excel默认）
+  const {
+      name = "Calibri",
+      size = 11
+  } = fontStyle;
+
+  // 1. 处理HTML，拆分换行符
+  const lines = html.split(/<br\/?>/gi);
+  let totalLines = 0;
+
+  // 2. 字符宽度系数（不同字体的字符宽度比例）
+  const charWidthFactors = {
+      "Calibri": 1,
+      "Arial": 0.95,
+      "微软雅黑": 1.1,
+      "宋体": 1.05,
+      // 可以根据需要添加更多字体
+  };
+  
+  // 获取当前字体的宽度系数，默认为1
+  const widthFactor = charWidthFactors[name] || 1;
+
+  // 3. 计算每行文本在单元格中会拆分为多少行
+  for (const line of lines) {
+      if (!line.trim()) {
+          // 空行也算一行
+          totalLines += 1;
+          continue;
+      }
+
+      // 计算该行的字符总宽度（考虑不同字符宽度差异）
+      let lineWidth = 0;
+      for (const char of line) {
+          // 粗略估计：中文字符宽度约为英文字符的2倍
+          lineWidth += isChinese(char) ? 2 * widthFactor : 1 * widthFactor;
+      }
+
+      // 计算该行会被拆分为多少行
+      const lineCount = Math.max(1, Math.ceil(lineWidth / cellWidth));
+      totalLines += lineCount;
+  }
+
+  return totalLines;
+}
+
+/**
+* 判断字符是否为中文字符
+* @param {string} char 单个字符
+* @returns {boolean} 是否为中文字符
+*/
+function isChinese(char) {
+  return /[\u4e00-\u9fa5]/.test(char);
+}
 // 自定义 HTML 解析函数，将 HTML 转换为 exceljs 富文本格式
 function htmlToExcelRichText(html) {
   const stack = [{}];
@@ -223,6 +277,8 @@ function htmlToExcelRichText(html) {
                   ...(tagName === 'strong' || tagName === 'b' ? { bold: true } : {}),
                   ...(tagName === 'em' || tagName === 'i' ? { italic: true } : {}),
                   ...(tagName === 'u' ? { underline: true } : {}),
+                  ...(tagName === 'sub' ? { vertAlign:'subscript'  } : {}),
+                  ...(tagName === 'sup' ? { vertAlign:'superscript'  } : {}),
                   ...styles
               };
               stack.push(newStyle);
@@ -243,11 +299,13 @@ function htmlToExcelRichText(html) {
   //return result.filter(item => item.text.trim().length > 0);
 }
 const http_src_pattern=/<img [^>]*src=['"]([^'"]+)[^>]*>/gi  
-export  async function exceljs_inner_exec(_this,name_lable_map){
+export  async function exceljs_inner_exec(_this,name_lable_map,excel_wb=undefined,allSheetNames=undefined){
     let _this_result=_this.result
-    const wb = new ExcelJS.Workbook();
+    let wb =excel_wb;
+    if(!wb)
+      wb=new ExcelJS.Workbook();
+    if(!allSheetNames)allSheetNames=new Set()      
     let ws ,title,one_obj,file_name=_this.result._zb_var_.file_name
-    let allSheetNames=new Set()
     //Object.keys( name_lable_map).forEach(one => {
     for(let one of Object.keys( name_lable_map) ){
         one_obj=name_lable_map[one]
@@ -280,14 +338,14 @@ export  async function exceljs_inner_exec(_this,name_lable_map){
             let line_no=0
             let column_nums=Object.keys( cur_table.columnlenArr).length
             //cur_table.tableData.forEach(one_line=>{   
+            let numberArr=new Array();
             for(let one_line of cur_table.tableData ){  
               ws.addRow(one_line.slice(0,column_nums))//添加数据到excel
               let col_no=0
               const row = ws.getRow(line_no+1)// 从1 开始计数，设置行高
               row.height= (cur_table.rowlenArr[line_no]??cur_table.rowlenArr["default"] )*72/96
-              for(let one_cell of one_line){ 
-                //console.info(one_cell)
-              //one_line.forEach(async (one_cell) => {
+              
+              for(let one_cell of one_line){
                 if(col_no>=column_nums){
                   col_no++
                   continue   
@@ -360,6 +418,25 @@ export  async function exceljs_inner_exec(_this,name_lable_map){
                 }
                 else  if(one_cell?.indexOf && (one_cell.indexOf("</")>=0 || one_cell.indexOf("/>")>=0 )){
                   excel_cell.value={'richText':htmlToExcelRichText(one_cell) } ;
+                  if(cur_table.auto_line_height){
+                    let lj_width=0;
+                    if(r_c){
+                      for (let j = 0; j < r_c.cs; j++) {
+                        lj_width+=col_width_arr[r_c.c + j].width                      
+                      }
+                    }else{
+                      lj_width=col_width_arr[col_no].width       
+                    }
+                    let rich_lines=calculateRichTextLines(one_cell,lj_width,{ name: "微软雅黑", size: 12 })
+                    if(r_c){
+                      for (let i = 0; i < r_c.rs; i++) {
+                        numberArr[r_c.r + i]= Math.ceil( rich_lines/r_c.rs) + 1;
+                      }
+                      
+                    }else{
+                      numberArr[line_no]=rich_lines + 1;                    
+                    }
+                  }
                 }
                 let ret=find_style(cur_table,line_no,col_no,cur_tbl_class_dict);
                 ['font','alignment','border','fill'].forEach(p=>{
@@ -369,12 +446,48 @@ export  async function exceljs_inner_exec(_this,name_lable_map){
                 })
                 col_no++
               };
+              if(numberArr[line_no]){
+                row.height+=numberArr[line_no];
+              }
               line_no++
             }                
             Object.keys( cur_table.config_merge).forEach(ele_m=>{
               let m=cur_table.config_merge[ele_m]
               ws.mergeCells(numToString(m.c+1) + (m.r+1)+":"+ numToString(m.c+m.cs)+ (m.r+m.rs));
-            })                
+            })   
+            if(cur_table.optimize){
+              for(let cc=0;cc<column_nums;cc++){
+                let m=cur_table.config_merge[`${cur_table.extend_lines[0]}_${cc}`]
+                if(!m)
+                  continue;
+                for(let ii=cur_table.extend_lines[0]+1;ii<=cur_table.extend_lines[1];ii++){
+                  ws.mergeCells(numToString(m.c+1) + (ii+1)+":"+ numToString(m.c+m.cs)+ (ii+m.rs));
+                }
+              }
+            }
+          if(!cur_table.auto_line_height)      
+            continue  
+          // 设置自动行高
+          //ws.eachRow((row) => {
+          //  // 计算行高
+          //  let maxHeight = row.height;
+          //  row.eachCell({ includeEmpty: true }, (cell) => {
+          //    let text=cell.value
+          //    if (cell.value.richText) {
+          //      // 将富文本转换为字符串
+          //      text = cell.value.richText.map(part => part.text).join('');      
+          //    }
+          //    const lines = text.split?text.split('\n'):[1];
+          //    const lineHeight = 15; // 假设每行的高度为 15
+          //    const height = lines.length * lineHeight;
+          //    if (height > maxHeight) {
+          //      maxHeight = height;
+          //    }
+          //  });            
+          //  // 设置行高
+          //  row.height = maxHeight;
+          //}); 
+                      
           }
           
           if (_this_result.data[one].type== "large"){
@@ -391,6 +504,10 @@ export  async function exceljs_inner_exec(_this,name_lable_map){
         //XLSX.utils.book_append_sheet(wb, ws, title.replace(/[\\|/|?|*|\[|\]]/,'_'))
         //ws=undefined
     };
+    if(excel_wb){
+      return; 
+    }
+    
     const buffer = await wb.xlsx.writeBuffer();
     const excel_data=new Blob([buffer], { type: "application/octet-stream"});
     if(window.cellreport.download_excel_func){

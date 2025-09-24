@@ -64,6 +64,15 @@ namespace reportWeb.Controllers
             {
                 throw new Exception("程序在取数据库连接时异常。通知开发人员升级");
             }
+            if (rpt_Db_Connection.conn_str.StartsWith("="))
+            {
+                using var report_env = new Env("test_login");
+                var ef = report_env.getExprFaced();
+                ef.addNewScopeForScript(" true; ", "getConnection");
+                report_env.logger = logger;
+                ef.addVariable("env", report_env);
+                rpt_Db_Connection.conn_str = ef.calculate(rpt_Db_Connection.conn_str) as string;
+            }
             ret.ConnectionString = rpt_Db_Connection.conn_str;
             ret.Open();
             if (ret.State == System.Data.ConnectionState.Open)
@@ -86,9 +95,9 @@ namespace reportWeb.Controllers
         public IActionResult test_login(String login_script, string test_user, string test_password)
         {
 
-            var ef = new CellReport.core.expr.ExprFaced2();
-            ef.addNewScopeForScript();
             using var report_env = new Env("test_login");
+            var ef = report_env.getExprFaced();
+            ef.addNewScopeForScript();
             report_env.logger = logger;
             ef.addVariable("env", report_env);
             ef.addVariable("__env__", report_env);
@@ -122,9 +131,9 @@ namespace reportWeb.Controllers
         {
             Response.StatusCode = 200;
             CR_Object result = new CR_Object() { { "errcode", 1 }, { "message", "用户名或密码错误" } };
-            var ef = new CellReport.core.expr.ExprFaced2();
-            ef.addNewScopeForScript();
             using var report_env = new Env("login_code");
+            var ef = report_env.getExprFaced();
+            ef.addNewScopeForScript();
             ef.addVariable("env", report_env);
             ef.addVariable("__env__", report_env);
             ef.addVariable("userid", "");
@@ -196,9 +205,9 @@ namespace reportWeb.Controllers
             }
             else
             {
-                var ef = new CellReport.core.expr.ExprFaced2();
-                ef.addNewScopeForScript();
                 using var report_env = new Env("login2");
+                var ef = report_env.getExprFaced();
+                ef.addNewScopeForScript();
                 ef.addVariable("env", report_env);
                 ef.addVariable("__env__", report_env);
                 ef.addVariable("userid", username);
@@ -451,9 +460,9 @@ namespace reportWeb.Controllers
             string verfiy_code = Random.Shared.Next(999999).ToString("000000")[0..code_len];
             HttpContext.Session.SetString("verfiy_code", verfiy_code);
             HttpContext.Session.SetString("send_time", DateTime.Now.Ticks.ToString());
-            var ef = new CellReport.core.expr.ExprFaced2();
-            ef.addNewScopeForScript();
             using var report_env = new Env("VerifyCode2");
+            var ef = report_env.getExprFaced();
+            ef.addNewScopeForScript();
             report_env.logger = logger;
             ef.addVariable("env", report_env);
             ef.addVariable("__env__", report_env);

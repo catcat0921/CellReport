@@ -4,11 +4,12 @@
         :close-on-click-modal="false"  @close="close" 
           direction="btt" append-to-body  
     >
+    <el-form>
     <el-tabs value="first" @tab-click="handleClick">
         <el-tab-pane label="页面" name="first">
             <el-form label-width="80px">
                     <el-form-item label="纸张大小">
-                        <el-select v-model="form.pageSize_name" placeholder="请选择">
+                        <el-select v-model="settings.pageSize_name" placeholder="请选择">
                             <el-option
                             v-for="item in pageSize_list"
                             :key="item.name"
@@ -19,23 +20,23 @@
                     </el-form-item>
 
                     <el-form-item label="方向">
-                        <el-radio v-model="form.orientation" label="portrait">纵向(较长)</el-radio>
-                        <el-radio v-model="form.orientation" label="landscape">横向(较宽)</el-radio>
+                        <el-radio v-model="settings.orientation" label="portrait">纵向(较长)</el-radio>
+                        <el-radio v-model="settings.orientation" label="landscape">横向(较宽)</el-radio>
                     </el-form-item>
 
                     <el-form-item label="缩放">
-                        <el-radio v-model="form.fitToPage" :label="false">调整为</el-radio>
-                        <el-radio v-model="form.fitToPage" :label="true">缩放比例</el-radio>
+                        <el-radio v-model="settings.fitToPage" :label="false">调整为</el-radio>
+                        <el-radio v-model="settings.fitToPage" :label="true">缩放比例</el-radio>
                         
                     </el-form-item>
-                    <el-form-item label="缩放比例" v-if="!form.fitToPage">
-                        <el-input-number v-model="form.scale" :min=1></el-input-number>
+                    <el-form-item label="缩放比例" v-if="!settings.fitToPage">
+                        <el-input-number v-model="settings.scale" :min=1></el-input-number>
                     </el-form-item> 
-                    <el-form-item label="几页宽" v-if="form.fitToPage">
-                        <el-input-number v-model="form.fitToWidth" :min=1></el-input-number>
+                    <el-form-item label="几页宽" v-if="settings.fitToPage">
+                        <el-input-number v-model="settings.fitToWidth" :min=1></el-input-number>
                     </el-form-item>
-                    <el-form-item label="几页高" v-if="form.fitToPage">
-                        <el-input-number v-model="form.fitToHeight" :min=1></el-input-number>
+                    <el-form-item label="几页高" v-if="settings.fitToPage">
+                        <el-input-number v-model="settings.fitToHeight" :min=1></el-input-number>
                     </el-form-item> 
                     
             </el-form>
@@ -43,59 +44,60 @@
     <el-tab-pane label="页边距" name="second">
         <el-form label-width="80px">
             <el-form-item label="上">
-                <el-input-number v-model="form.margin_top"></el-input-number>
+                <el-input-number v-model="settings.margin_top"></el-input-number>
             </el-form-item>
             <el-form-item label="下">
-                <el-input-number v-model="form.margin_bottom"></el-input-number>
+                <el-input-number v-model="settings.margin_bottom"></el-input-number>
             </el-form-item>
             <el-form-item label="左">
-                <el-input-number v-model="form.margin_left"></el-input-number>
+                <el-input-number v-model="settings.margin_left"></el-input-number>
             </el-form-item>
             <el-form-item label="右">
-                <el-input-number v-model="form.margin_right"></el-input-number>
+                <el-input-number v-model="settings.margin_right"></el-input-number>
             </el-form-item>
             <el-form-item label="页眉">
-                <el-input-number v-model="form.margin_header"></el-input-number>
+                <el-input-number v-model="settings.margin_header"></el-input-number>
             </el-form-item>
             <el-form-item label="页脚">
-                <el-input-number v-model="form.margin_footer"></el-input-number>
+                <el-input-number v-model="settings.margin_footer"></el-input-number>
             </el-form-item>
             <el-form-item label="水平居中">
-                <el-checkbox v-model="form.horizontalCentered">水平居中</el-checkbox>
+                <el-checkbox v-model="settings.horizontalCentered">水平居中</el-checkbox>
             </el-form-item>
             <el-form-item label="垂直居中">
-                <el-checkbox v-model="form.verticalCentered">垂直居中</el-checkbox>
+                <el-checkbox v-model="settings.verticalCentered">垂直居中</el-checkbox>
             </el-form-item>            
         </el-form>
     </el-tab-pane>
     <el-tab-pane label="页眉/页脚" name="third">
         <el-form label-width="80px">
             <el-form-item label="页眉左">
-                <el-input v-model="form.header_left"></el-input>
+                <el-input v-model="settings.header_left"></el-input>
             </el-form-item>
             <el-form-item label="页眉中">
-                <el-input v-model="form.header_center"></el-input>
+                <el-input v-model="settings.header_center"></el-input>
             </el-form-item>
             <el-form-item label="页眉右">
-                <el-input v-model="form.header_right"></el-input>
+                <el-input v-model="settings.header_right"></el-input>
             </el-form-item>
             <el-form-item label="页脚左">
-                <el-input v-model="form.footer_left"></el-input>
+                <el-input v-model="settings.footer_left"></el-input>
             </el-form-item>
             <el-form-item label="页脚中">
-                <el-input v-model="form.footer_center"></el-input>
+                <el-input v-model="settings.footer_center"></el-input>
             </el-form-item>
             <el-form-item label="页脚右">
-                <el-input v-model="form.footer_right"></el-input>
+                <el-input v-model="settings.footer_right"></el-input>
             </el-form-item>                 
         </el-form>
     </el-tab-pane>
     <el-tab-pane label="工作表" name="fourth">
         <el-form-item label="套打背景图">
-                <el-input v-model="form.print_template_background"></el-input>
+                <el-input v-model="settings.print_template_background"></el-input>
             </el-form-item>
     </el-tab-pane>
   </el-tabs>
+</el-form>
     <div slot="footer" class="dialog-footer">
           <el-button @click="dialogVisible = false">取 消</el-button>
           <el-button type="primary" @click="handleSubmit">确 定</el-button>
@@ -108,11 +110,13 @@ export default {
     name: 'paperSetting',  
     props: { visible: Boolean, target_obj: Object,},
     mounted(){
-        this.form=Object.assign({}, this.form,this.target_obj)
+        this.settings=Object.assign({}, this.settings,this.target_obj)
+        this.set_pageSize_name();
+        
     },
     data(){
         return {
-            form:{
+            settings:{
                 pageSize_name:'A4',
                 pageSize_Width:595,
                 pageSize_Height:842,
@@ -171,22 +175,14 @@ export default {
         }
     },
     watch: {
-        "form.pageSize_name"(){
-            let cur=this.pageSize_list.filter(x=>x.name==this.form.pageSize_name)[0]
-            this.form.pageSize_Width=cur.value[0];
-            this.form.pageSize_Height=cur.value[1];
-            if(this.form.orientation!='portrait'){
-                let t;
-                t=this.form.pageSize_Width
-                this.form.pageSize_Width=this.form.pageSize_Height
-                this.form.pageSize_Height=t
-            }
+        "settings.pageSize_name"(){
+            this.set_pageSize_name()
         },
-        "form.orientation"(){
+        "settings.orientation"(){
                 let t;
-                t=this.form.pageSize_Width
-                this.form.pageSize_Width=this.form.pageSize_Height
-                this.form.pageSize_Height=t            
+                t=this.settings.pageSize_Width
+                this.settings.pageSize_Width=this.settings.pageSize_Height
+                this.settings.pageSize_Height=t            
         },
         dialogVisible(val) {
             this.$emit('update:visible', val)
@@ -199,8 +195,20 @@ export default {
     methods:{
         handleSubmit(){
             this.$emit('update:visible', false)
-            this.$emit("submit",this.form)        
+            this.$emit("submit",this.settings)        
+        },
+        set_pageSize_name(){
+            let cur=this.pageSize_list.filter(x=>x.name==this.settings.pageSize_name)[0]
+            this.settings.pageSize_Width=cur.value[0];
+            this.settings.pageSize_Height=cur.value[1];
+            if(this.settings.orientation!='portrait'){
+                let t=this.settings.pageSize_Width
+                this.settings.pageSize_Width=this.settings.pageSize_Height
+                this.settings.pageSize_Height=t
+            }
+            //console.info(JSON.stringify( this.settings))
         }
+
     }
 }
 </script>

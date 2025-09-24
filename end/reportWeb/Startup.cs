@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using CSRedis;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
@@ -48,12 +47,12 @@ using System.Timers;
 
 namespace reportWeb
 {
-     public class Startup
+    public class Startup
     {
         public Startup(IConfiguration configuration)
         {
             Configuration = configuration;
-            
+
         }
         private static void Timer_Elapsed(object sender, ElapsedEventArgs e, string directoryPath)
         {
@@ -63,7 +62,7 @@ namespace reportWeb
             foreach (string file in files)
             {
                 FileInfo fileInfo = new FileInfo(file);
-                if(DateTime.Now - fileInfo.CreationTime > TimeSpan.FromMinutes(1))
+                if (DateTime.Now - fileInfo.CreationTime > TimeSpan.FromMinutes(1))
                 {
                     try
                     {
@@ -76,31 +75,15 @@ namespace reportWeb
             }
         }
         public IConfiguration Configuration { get; }
-        
+
         // This method gets called by the runtime. Use this method to add services to the container.
         public void ConfigureServices(IServiceCollection services)
         {
-            //iText.Kernel.Font.PdfFontFactory.RegisterSystemDirectories();
             //services.AddSingleton(HtmlEncoder.Create(System.Text.Unicode.UnicodeRanges.All));
             CellReport.core.expr.ExprHelper.buildFuncMap();
-            //CellReport.core.expr.ExprHelper.AddFunc(typeof(CellReport.function.Func_md5));
-            CellReport.core.expr.ExprHelper.AddFunc(typeof(CellReport.function.Func_qr_code));
-            CellReport.core.expr.ExprHelper.AddFunc(typeof(CellReport.function.Func_kata));
-            CellReport.core.expr.ExprHelper.AddFunc(typeof(CellReport.function.Func_kata_Variable));
-
-            //IWebHostEnvironment env;
-            //ReportDbContext.EnsureDbExists(env);
 
             services.AddScoped<ReportDbContext>();
 
-            //services.AddDbContext<ReportDbContext>(optionsBuilder =>
-            //{
-            //    var folder = Environment.SpecialFolder.LocalApplicationData;
-            //    var path = Environment.GetFolderPath(folder);
-            //    var DbPath = $"{path}{System.IO.Path.DirectorySeparatorChar}report.db";
-            //    //var dataAppSetting = Configuration.GetSection("ConnectionSetting").Get<ConnectionSetting>();
-            //    optionsBuilder.UseSqlite($"Data Source=report.db");
-            //});
             //添加身份认证方案
             var jwtConfig = Configuration.GetSection("Jwt").Get<JwtConfig>();
             services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -115,16 +98,16 @@ namespace reportWeb
            })*/
            .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, option =>
            {
-               option.SaveToken = true;              
+               option.SaveToken = true;
                option.Events = new JwtBearerEvents()
                {
                    OnMessageReceived = context =>
                    {
-                       if(context.Request.Headers["Authorization"].ToString()=="" && context.Request.Cookies["access_token"]!=null)
-                            context.Token = context.Request.Cookies["access_token"];
+                       if (context.Request.Headers["Authorization"].ToString() == "" && context.Request.Cookies["access_token"] != null)
+                           context.Token = context.Request.Cookies["access_token"];
                        return Task.CompletedTask;
                    },
-                   OnChallenge= context =>
+                   OnChallenge = context =>
                    {
                        context.HandleResponse();
                        context.Response.WriteAsJsonAsync(new { code = -1, message = "token过期" });
@@ -132,7 +115,7 @@ namespace reportWeb
                    },
                    OnAuthenticationFailed = context =>
                    {
-                       
+
                        //ASP.NET Core Web Api之JWT刷新Token(三)
                        //https://blog.csdn.net/weixin_30483013/article/details/99642627?utm_medium=distribute.pc_relevant_download.none-task-blog-baidujs-1.nonecase&depth_1-utm_source=distribute.pc_relevant_download.none-task-blog-baidujs-1.nonecase
                        // 如果过期，则把<是否过期>添加到，返回头信息中
@@ -174,14 +157,14 @@ namespace reportWeb
                {
                    ValidIssuer = jwtConfig.Issuer,
                    ValidAudience = jwtConfig.Audience,
-                   ValidateAudience=false,
-                   ValidateIssuer = false,                   
+                   ValidateAudience = false,
+                   ValidateIssuer = false,
                    ValidateLifetime = true,//jwtConfig.ValidateLifetime,
                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtConfig.SigningKey)),
                    //缓冲过期时间，总的有效时间等于这个时间加上jwt的过期时间
                    ClockSkew = TimeSpan.FromSeconds(0)
                };
-           }); 
+           });
             //================================
             // If using Kestrel:
             services.Configure<KestrelServerOptions>(options =>
@@ -190,7 +173,7 @@ namespace reportWeb
             });
             services.AddScoped<ScopedObj>();
             services.AddSingleton<JwtConfig>(jwtConfig);
-            
+
             // If using IIS:
             services.Configure<IISServerOptions>(options =>
             {
@@ -208,13 +191,20 @@ namespace reportWeb
             services.AddCors(op => {
                 op.AddPolicy("CorsTest",
                     set => {
-                    set.SetIsOriginAllowed(origin => true)
-                                   .AllowAnyHeader()
-                                   .AllowAnyMethod()
-                                   .AllowCredentials();//这是是重要的，没有他就会有跨域问题
+                        set.SetIsOriginAllowed(origin => true)
+                                       .AllowAnyHeader()
+                                       .AllowAnyMethod()
+                                       .AllowCredentials();//这是是重要的，没有他就会有跨域问题
                     });
             });
-            services.AddSignalR();
+            services.AddSignalR(options =>
+            {
+                // 设置最大接收消息大小（单位：字节）
+                // 示例：设置为 10MB（10 * 1024 * 1024 = 10485760）
+                int MaximumReceiveMessageSize = Configuration.GetValue<int>("SignalR_MaximumReceiveMessageSizeKb");
+                if (MaximumReceiveMessageSize > 0)
+                    options.MaximumReceiveMessageSize = MaximumReceiveMessageSize * 1024;
+            });
             services.AddMvc();
             services.AddSession(options =>
             {
@@ -226,20 +216,16 @@ namespace reportWeb
             services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(Directory.GetCurrentDirectory() + Path.DirectorySeparatorChar + "DataProtection"));
 
             CellReport.Redis_Cache.redis_str = Configuration["redis_str"];
-            if(!String.IsNullOrEmpty( CellReport.Redis_Cache.redis_str ))
-            {
-                CSRedisClient redisClient = new CSRedisClient(CellReport.Redis_Cache.redis_str);
-                RedisHelper.Initialization(redisClient);
-            }
-            var loc=System.Reflection.Assembly.GetEntryAssembly().Location;
+
+            var loc = System.Reflection.Assembly.GetEntryAssembly().Location;
             DbProviderFactories.RegisterFactory("Microsoft.Data.Sqlite", SqliteFactory.Instance);
-            foreach(var one in Configuration.GetSection("DbProviderFactories").Get<DbProviderCfg[]>())
+            foreach (var one in Configuration.GetSection("DbProviderFactories").Get<DbProviderCfg[]>())
             {
                 //var ass = System.Reflection.Assembly.Load( one.DllName);
                 var file_name = Path.GetDirectoryName(loc) + "/" + one.DllName + (one.DllName.EndsWith(".dll") ? "" : ".dll");
                 var ass = System.Reflection.Assembly.LoadFrom(file_name);
                 DbProviderFactory f = ass.GetType(one.FactoryClass).GetField(one.InstanceName).GetValue(null) as DbProviderFactory;
-                DbProviderFactories.RegisterFactory(one.Name, f );
+                DbProviderFactories.RegisterFactory(one.Name, f);
             }
 
         }
@@ -247,8 +233,8 @@ namespace reportWeb
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
         {
-            ReportDbContext.EnsureDbExists(env);
             reportWeb.other.ReportMonitor.start();
+            ReportDbContext.EnsureDbExists(env);
             if (env.IsDevelopment())
             {
                 app.UseDeveloperExceptionPage();
@@ -321,7 +307,7 @@ namespace reportWeb
             // 创建定时器
             Timer timer = new();
             // 设置定时器的间隔（以毫秒为单位）
-            timer.Interval = 60*1000; // 每秒执行一次
+            timer.Interval = 60 * 1000; // 每秒执行一次
             // 设置定时器的重复行为
             timer.AutoReset = true; // 设置为 true，表示重复执行；设置为 false，表示只执行一次
             // 添加定时器的事件处理程序
@@ -343,17 +329,17 @@ namespace reportWeb
                 }
                 var seg_arr = cur_path.Split(":");
                 string grp = "default";
-                if (seg_arr.Length>=2)
+                if (seg_arr.Length >= 2)
                 {
-                    grp=seg_arr[1];
+                    grp = seg_arr[1];
                 }
-                
+
                 var scopedObj = context.RequestServices.GetService<ScopedObj>();
                 //scopedObj.rpt_group = context.RequestServices.GetService<ReportDb>().findGroupById(grp);
-                var query=context.RequestServices.GetService<ReportDbContext>();
+                var query = context.RequestServices.GetService<ReportDbContext>();
                 scopedObj.rpt_group = query.GetRpt_Group(grp);
                 scopedObj.WebHostEnvironment = env;
-                
+
                 context.Request.Path = seg_arr[0];
                 if (context.Request.Path == "/run")
                 {
@@ -363,7 +349,7 @@ namespace reportWeb
                         context.Response.ContentType = "application/json";
                         return context.Response.WriteAsync("{ \"errcode\":1, \"message\":\"grp没有定义\" }");
                     }
-                    var rn=context.Request.Query["reportName"];
+                    var rn = context.Request.Query["reportName"];
                     if (rn.Count == 1)
                     {
                         context.Request.Path = "/" + scopedObj.rpt_group.getPageNameByReportName(rn[0]);
@@ -377,17 +363,17 @@ namespace reportWeb
                 return next(context);
             });
             app.UseCors("CorsTest");//其中app.UseCors()必须放在app.UseRouting()和app.UseEndpoints之间，不然还是解决不了问题
-
             app.UseAuthentication();//认证(Authentication)  
             app.UseAuthorization(); //授权 (Authorization)
 
-            app.UseSession(); 
+            app.UseSession();
 
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapRazorPages();
                 endpoints.MapHub<ChatHub>("/chathub");
-                endpoints.MapControllerRoute(name: "default",pattern: "{controller=user}/{action=Index}/{id?}");
+                endpoints.MapHub<CustomChatHub>("/CustomChatHub");
+                endpoints.MapControllerRoute(name: "default", pattern: "{controller=user}/{action=Index}/{id?}");
                 //endpoints.MapDynamicPageRoute<GrpRouteTransformer>("{page}/{**grp}");
                 //endpoints.MapDynamicControllerRoute<GrpRouteTransformer>("{area}/{controller=Home}/{action=Index}/{id:int?}");
                 //endpoints.Map(RoutePatternFactory.Parse("/run/{act}/{grp}/{a0}/{a1}"), rpt_execute);
@@ -400,8 +386,8 @@ namespace reportWeb
                     try
                     {
                         var m = MessageQueueBlock<DemoMessage>.Take();//Client(m.ConnectionId)
-                        if(m.ConnectionId!=null)
-                            await m.hubContext.Clients.Client(m.ConnectionId)?.SendAsync("ReceiveMessage",m.ConnectionId,m.Body);                    
+                        if (m.ConnectionId != null)
+                            await m.hubContext.Clients.Client(m.ConnectionId)?.SendAsync("ReceiveMessage", m.ConnectionId, m.Body);
                     }
                     catch (Exception ex)
                     {
@@ -409,7 +395,13 @@ namespace reportWeb
                     }
                 }
             });
+            Task.Run(async () =>
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(10));
+                var directoryPath = Path.Combine(env.WebRootPath, "../", "DynamicCode");
+                // 创建编译器实例
+                CellReport.core.expr.ExprHelper.dynamicCodeCompiler = new CellReport.util.DynamicCodeCompiler(directoryPath);
+            });
         }
-        
-     }
+    }
 }

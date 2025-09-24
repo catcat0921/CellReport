@@ -343,9 +343,9 @@ namespace reportWeb.Controllers
             object exec_result = null;
             if (String.IsNullOrEmpty(report_content))
             {
-                BaseExprFaced exprFaced = new ExprFaced2();
-                exprFaced.addNewScopeForScript();
                 using Env report_env = new Env("exec_expr1");
+                BaseExprFaced exprFaced = report_env.getExprFaced();
+                exprFaced.addNewScopeForScript();
                 CellReport.dataSet.GroupMap cur_GroupMap = new();
                 exprFaced.addVariable("env", report_env);
                 exprFaced.addVariable("__env__", report_env);
@@ -741,7 +741,7 @@ namespace reportWeb.Controllers
                 }
             }
             StringBuilder sb = new();
-            foreach (Match one in new Regex(@"/\*\s*服务器脚本\s*\\n(.*?)结束\s*\*/").Matches(content))
+            foreach (Match one in XmlReport.sever_script_regex.Matches(content))
             {
                 sb.AppendLine(one.Groups[1].Value);
             }

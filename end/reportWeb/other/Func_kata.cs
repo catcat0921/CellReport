@@ -62,7 +62,7 @@ namespace CellReport.function
             {
                 ds_struct = new();
                 ds_struct.ds_link = cr_obj["db_link"].ToString();
-                ds_struct.ds_type = cr_obj["ds_type"].ToString();
+                ds_struct.ds_type = cr_obj["ds_type"]?.ToString()?? cr_obj["db_type"]?.ToString();
                 ds_struct.name = "¶¯Ì¬Ö¸¶¨£º" + ds_struct.ds_type;
             }
             else

@@ -212,8 +212,11 @@ export default {
       if(!_this.cur_result.optimize)
       {
         _this.self_page_size=_this.cur_result.tableData.length
-        if(_this.cur_result.row_page_break_set.length>0)
-        _this.page_count=_this.cur_result.row_page_break_set.length+1
+        if(_this.cur_result.row_page_break_set.length>0){
+          _this.page_count=_this.cur_result.row_page_break_set.length
+          if(_this.cur_result.tableData.length > _this.cur_result.row_page_break_set.at(-1) )
+          _this.page_count++
+        }
       }else{
         _this.self_page_size=_this.self.page_size
       }

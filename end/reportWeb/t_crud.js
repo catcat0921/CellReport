@@ -443,9 +443,9 @@ function buildTemplate(para) {
          },
       }
     }  
-    /* 服务器脚本  
+    /* 服务器脚本  */
    ${kata_template}
-       结束 */       
+    /*   结束 */       
     </script>     
   <style>
     .avue-crud__pagination {    padding: 10px; }

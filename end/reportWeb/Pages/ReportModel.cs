@@ -93,7 +93,7 @@ namespace reportWeb.Pages
         {
             return true;
         }
-        public CellReport.BaseCache myCache { get; protected set; } = null;
+        public CellReport.Redis_Cache myCache { get; protected set; } = null;
 
         protected CellReport.running.Env report_env;
         private static string g_report_content = null;
@@ -209,6 +209,7 @@ namespace reportWeb.Pages
                         if (before_exec_result.TryGetValue("cache_id", out Object cache_id) && cache_id != null)
                         {
                             myCache = new CellReport.Redis_Cache(cache_id.ToString(), report_env.logger);//*/myCache = null;
+                            report_env.Disposables.Add(myCache);
                             myCache.getFreshFlag = () => before_exec_result["fresh_flag"].ToString();
                         }
                         this.tips = before_exec_result["tips"]?.ToString()?.Replace("\\n", "\n");

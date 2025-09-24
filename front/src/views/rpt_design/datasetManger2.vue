@@ -473,7 +473,11 @@ export default {
                     _this.$alert(resp.message)
                     return
                 }
-                let response_data=JSON.parse( resp.result)                
+                let response_data=JSON.parse( resp.result)   
+                if(response_data.errcode==1){
+                    this.$message.error(response_data.message);
+                    return
+                }
                 _this.$set(this.action_target,"report_result",response_data)
                 let param=[]
                 _this.action_target.report_result.form.forEach(ele=>{
@@ -701,6 +705,7 @@ var _init_dataset_dict_=
         if(ds._type=='sql' ){
             //if(ds._back_split_page==undefined) this.$set(ds,'_back_split_page',false)
             if(ds._FilterZero==undefined) this.$set(ds,'_FilterZero','false')
+            ds._FilterZero=ds._FilterZero.toLowerCase() 
         }
         this.action_target=ds
         //if(this.action_target.__text)this.action_target.__text=this.action_target.__text.replaceAll("\r",'')

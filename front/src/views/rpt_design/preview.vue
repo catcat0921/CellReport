@@ -1,14 +1,13 @@
 <template>
   <div style="width:100%;height:100%;overflow: hidden; "  >
-       <paperSetting :target_obj="result.paperSetting" @submit="paperSetting_submit"  :visible.sync="paper_setting_dialogVisible" />
-
+       
       <el-dialog v-draggable v-if="pdf_output_dialogVisible" style="text-align: left;" class="report_define"
         :visible.sync="pdf_output_dialogVisible" :title="'PDF导出和打印预览'" 
             :close-on-click-modal="false"   :fullscreen="true"
               direction="btt" append-to-body  
         > 
-        <div slot="title" class="dialog-footer">
-          PDF导出和打印预览
+        <div slot="title" class="el-dialog__title">
+          <span>PDF导出和打印预览</span>
           <el-button @click="paper_setting_dialogVisible = true">页面设置</el-button>
           <el-button @click="pdf_output_dialogVisible = false">取 消</el-button>
           <el-button type="primary" @click="pdf_output_dialogVisible = false">确 定</el-button>
@@ -20,7 +19,7 @@
                 <p>It appears you don't have PDF support in this web browser. <a href="#" id="download-link">Click here to download the PDF</a>.</p>
             </object>
         </div>
-
+        <paperSetting :target_obj="result.paperSetting" @submit="paperSetting_submit" title="" :visible.sync="paper_setting_dialogVisible" class="report_define"/>
     </el-dialog> 
     <el-dialog v-draggable v-if="dync_item_dialogVisible" style="text-align: left;" 
           :visible.sync="dync_item_dialogVisible" 
@@ -263,6 +262,10 @@ export default {
     },
     async paperSetting_submit(val){
       let pdf_data=await get_pdf(this.result,val)
+      if(pdf_data.errcode==1){
+        this.$message.error(pdf_data.message);
+        return
+      }
       let datauri = URL.createObjectURL(pdf_data)
       document.getElementById("pdf_output").data =datauri
     },
@@ -380,6 +383,10 @@ export default {
     async export_pdf(){
       let _this=this
       let pdf_data=await get_pdf(this.result)
+      if(pdf_data.errcode==1){
+        this.$message.error(pdf_data.message);
+        return
+      }
        _this.pdf_output_dialogVisible=true
        let datauri = URL.createObjectURL(pdf_data)
       _this.$nextTick(()=>{

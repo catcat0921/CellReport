@@ -129,8 +129,10 @@ export default {
             let dataLength
             if(_this.real_map_url())
               dataLength = window.echarts.getMap(_this.real_map_url()).geoJSON.features.length;
-            if(myChart.getOption().dataset)
-              dataLength =myChart.getOption().dataset[0].source.length -1
+            //if(myChart.getOption().dataset){
+              //dataLength =myChart.getOption().dataset[0].source.length -1
+              dataLength =_this.real_data.length-1
+            //}
             // 高亮轮播展示
             _this.clearTimer();
             _this.timer = setInterval(()=>{
@@ -1270,7 +1272,7 @@ function map_option (self,_this,__valid_data__) {
             { //{name: ele.name,value: [ele.lng, ele.lat, ele.value] }
             res.push({
                 name: data[i][0],
-                value: geoCoord.concat(data[i][1])
+                value: JSON.parse(JSON.stringify(geoCoord)).concat(data[i][1])
             });
             }
         }
@@ -1331,7 +1333,13 @@ function map_option (self,_this,__valid_data__) {
                 return {};
               })(),
               {
-                  formatter:self.option.labelFormatter && self.option.labelFormatter.trim()!=""?self.option.labelFormatter: '{b}<br/>{c}',
+                  formatter:self.option.labelFormatter && self.option.labelFormatter.trim()!=""?self.option.labelFormatter: 
+                  function (params) {
+                    if (typeof (params.value)[2] == "undefined") {
+                        return params.name + ' <br/> ' + params.value;
+                    } else {
+                        return params.name + ' <br/> ' + params.value[2];
+                    }},//                  '{b}<br/>{c}',
                     backgroundColor: self.option.tipBackgroundColor || _this.defaultsetting['BACKGROUND-COLOR'],
                     textStyle: {
                         fontSize: self.option.tipFontSize,

@@ -6,14 +6,32 @@ using System.Collections.Generic;
 using System.IO.Compression;
 using System.IO;
 using Microsoft.IO;
-using CSRedis;
-
+using FreeRedis;
 using Microsoft.AspNetCore.Http;
 using System.Threading;
 using System.Diagnostics;
+using static FreeRedis.RedisClient;
+using System.Collections.Concurrent;
+using System.Linq;
 
 namespace CellReport
 {
+    public class RedisHelper
+    {
+
+        private static ConcurrentDictionary<String, RedisClient> cache = new ConcurrentDictionary<String, RedisClient>();
+
+        public static RedisClient GetRedis(String key = "")
+        {
+            if (String.IsNullOrWhiteSpace(key) && cache.Count == 1)
+                return cache.First().Value;
+            if (String.IsNullOrWhiteSpace(key))
+                throw new ArgumentException("没有缺省连接，不能用空字符串获取！");
+            if (cache.ContainsKey(key)) return cache[key];
+            cache.TryAdd(key, new RedisClient(key));
+            return cache[key];
+        }
+    }
     public abstract class BaseCache
     {
         public Func<String> getFreshFlag;
@@ -23,13 +41,18 @@ namespace CellReport
         public DateTime fresh_time { get; protected set; }
         public string fresh_flag { get; protected set; } = "0";
     }
-    public class Redis_Cache : BaseCache
+    public class Redis_Cache : BaseCache, IDisposable
     {
+        public void Dispose()
+        {
+            //if(redisHelper!=null)
+            //    redisHelper.Dispose();
+        }
         public static readonly RecyclableMemoryStreamManager manager;
         private static int bytesBufSize = 1024 * 32;//10000
         static Redis_Cache()
         {
-            int blockSize = 1024*32;
+            int blockSize = 1024 * 32;
             int largeBufferMultiple = 1024 * 1024; //85,000
             int maxBufferSize = 128 * largeBufferMultiple;
 
@@ -39,6 +62,7 @@ namespace CellReport
             //manager.AggressiveBufferReturn = true;
             manager.MaximumFreeLargePoolBytes = maxBufferSize * 4;
             manager.MaximumFreeSmallPoolBytes = 100 * blockSize;
+
         }
         public static string redis_str;// = System.Configuration.ConfigurationManager.AppSettings["redis_str"] ?? "127.0.0.1:6379,password=";
         /**
@@ -48,11 +72,20 @@ namespace CellReport
         {
             if (String.IsNullOrEmpty(Redis_Cache.redis_str))
             {
-                throw new Exception("没有提供redis连接串，请修改appsetting.json中的redis_str,格式：127.0.0.1:6379,password=");
+                throw new Exception("没有提供redis连接串，请修改appsetting.json中的redis_str,格式：127.0.0.1:6379,password=,database=0");
             }
+            if (!redis_str.Contains("database"))
+                redis_str = redis_str + ",database=0";
+            if (redisHelper == null)
+                redisHelper = RedisHelper.GetRedis(redis_str);
+            //RedisHelper.Serialize = obj => JsonConvert.SerializeObject(obj);
+            //RedisHelper.Deserialize = (json, type) => JsonConvert.DeserializeObject(json, type);
+
             this.cacheId = cacheId;
             this.logger = logger;
+
         }
+        private FreeRedis.RedisClient redisHelper { get; set; }
         private CellReport.running.Logger logger;
         public int databaseId = 4;
         private String cacheId;
@@ -65,11 +98,11 @@ namespace CellReport
             return $"{cacheId}:calc_lock:{key}";
         }
         private String FreshTimeString { get { return $"{cacheId}:fresh_time"; } }
-        protected int CalcLockTTLSeconds=60*5;//计算锁定缺省为5 分钟
-        protected int ResultTTLMinutes = 2*60;//结果缺省缓存时间长度为2 小时
+        protected int CalcLockTTLSeconds = 60 * 5;//计算锁定缺省为5 分钟
+        protected int ResultTTLMinutes = 2 * 60;//结果缺省缓存时间长度为2 小时
         private static int now_calc_num = 0;
         //fresh_flag 对应的是客户端发送过来的刷新标记，fresh_time 对应的是发送过来新的刷新标记时本地的时间ticks
-        private static string script_sha=null;
+        private static string script_sha = null;
         protected static String exec_script = @"
 
 if ARGV[1]~=redis.call('hget',ARGV[2+2],'fresh_flag') then --如果标记不一样，就更新全局缓存标记和时间
@@ -95,42 +128,52 @@ if 0==redis.call('exists',ARGV[2+3]) then
 else
     return {'已经在计算了',ARGV[3],0} --已经在计算了
 end  ";
-        public override async Task OutputOrCalcAndCache(String key, HttpResponse response, 
-            Func<MyTextWrite,Task> calcReportAndExportHtml, String needType="json")
+        public override async Task OutputOrCalcAndCache(String key, HttpResponse response,
+            Func<MyTextWrite, Task> calcReportAndExportHtml, String needType = "json")
         {
             string cache_key = cacheKey(key);
-            
+
             if (getFreshFlag != null)
                 fresh_flag = getFreshFlag();
             //redisDatabase.StringSet(FreshTimeString, TotalSeconds);
             string wait_result = "有线程正在读，不能清空";
             do
             {
-                if(script_sha==null)
-                    script_sha = RedisHelper.ScriptLoad(exec_script);
-                var script_exists=await RedisHelper.ScriptExistsAsync(script_sha);
-                if (!script_exists[0])
-                    script_sha = RedisHelper.ScriptLoad(exec_script);
+                if (script_sha == null)
+                    script_sha = redisHelper.ScriptLoad(exec_script);
+                var script_exists = await redisHelper.ScriptExistsAsync(script_sha);
+                if (!script_exists)
+                    script_sha = redisHelper.ScriptLoad(exec_script);
                 //返回 0 ，需要计算，返回 1 ，已经在计算了，其他就是缓存的结果
-                var result=(Object[])(await RedisHelper.EvalSHAAsync(script_sha, cache_key,
-                    fresh_flag, CalcLockTTLSeconds, DateTime.Now.Ticks,
-                    FreshTimeString, CalcLockString(key), needType
-                    ));
+                Object[] result = null;
+                var cur_tick = DateTime.Now.Ticks;
+                try
+                {
+                    result = (Object[])(await redisHelper.EvalShaAsync(script_sha, new String[] { cache_key },
+                        fresh_flag, CalcLockTTLSeconds, cur_tick,
+                        FreshTimeString, CalcLockString(key), needType
+                        ));
+                }
+                catch (Exception ex)
+                {
+                    logger.Error($"cache_key:{cache_key}\nfresh_flag:{fresh_flag} \nCalcLockTTLSeconds:{CalcLockTTLSeconds}\ncur_tick:{cur_tick}\nFreshTimeString:{FreshTimeString}\nCalcLockString:{CalcLockString(key)}\nneedType:{needType}");
+                    throw;
+                }
                 wait_result = result[0] as String;
                 global_time = DateTime.FromBinary(long.Parse(result[1].ToString()));
                 fresh_time = DateTime.FromBinary(long.Parse(result[2].ToString()));
-                if("可以开始计算"!= wait_result)
-                    logger.Info(wait_result+":"+key);
+                if ("可以开始计算" != wait_result)
+                    logger.Info(wait_result + ":" + key);
                 if (wait_result == "有线程正在读，不能清空")
                     await Task.Delay(500);
             } while (wait_result == "有线程正在读，不能清空");
             //redisDatabase.HashScan
-            if (wait_result== "已经在计算了")//数字一的 ascii 码是49 相当于 (int)result == 1
+            if (wait_result == "已经在计算了")//数字一的 ascii 码是49 相当于 (int)result == 1
             {
                 await response.WriteAsync("{\"errcode\":1,\"message\":\"已经在计算，正在刷新缓存，请稍后再试！\"");
-                return ;
+                return;
             }
-            
+
             if (int.TryParse(wait_result, out int cnt))
             {
                 try
@@ -143,7 +186,7 @@ end  ";
                         //sw.Stop();
                         //logger.Info("HScanAsync: " + sw.ElapsedMilliseconds + "ms");
                         sw.Restart();
-                        var one = await RedisHelper.HGetAsync<byte[]>(cache_key, $"{needType}:{i.ToString("00000000")}");
+                        var one = await redisHelper.HGetAsync<byte[]>(cache_key, $"{needType}:{i.ToString("00000000")}");
                         sw.Stop();
                         logger.Debug("HGetAsync: " + sw.ElapsedMilliseconds + "ms");
                         sw.Restart();
@@ -153,13 +196,13 @@ end  ";
                     }
                     await response.Body.FlushAsync();
                     logger.Info("缓存取出成功:" + key);
-                    return ;
+                    return;
                 }
                 finally
                 {
-                    await RedisHelper.HIncrByAsync(cache_key, "reading",-1);
+                    await redisHelper.HIncrByAsync(cache_key, "reading", -1);
                 }
-            }            
+            }
             try
             {
                 Interlocked.Increment(ref Redis_Cache.now_calc_num);
@@ -167,39 +210,39 @@ end  ";
                 this.fresh_time = DateTime.Now;
                 using (var jsonStream = manager.GetStream() as RecyclableMemoryStream) //
                 {
-                    
+
                     using (MyTextWrite jsonWriter = new MyTextWrite(jsonStream))
                     {
 
-                        await calcReportAndExportHtml?.Invoke( jsonWriter);
-                        await jsonWriter.FlushAsync();                        
+                        await calcReportAndExportHtml?.Invoke(jsonWriter);
+                        await jsonWriter.FlushAsync();
                     }
 
                     await jsonStream.FlushAsync();
-                    var pipe=RedisHelper.StartPipe();
+                    PipelineHook pipe = redisHelper.StartPipe();
                     StreamToBytesArray(jsonStream, cache_key, pipe, "json");
-                    
+
                     pipe.HSet(cache_key, "fresh_time", this.fresh_time.Ticks);
                     pipe.HSet(cache_key, "reading", 0);
                     //缺省2小时后过期，自动删除
-                    pipe.Expire(cache_key, ResultTTLMinutes*60);
+                    pipe.Expire(cache_key, ResultTTLMinutes * 60);
                     pipe.EndPipe();
                     jsonStream.Position = 0;
-                    await jsonStream.CopyToAsync(response.Body);  
+                    await jsonStream.CopyToAsync(response.Body);
                 }
                 logger.Info("完成计算:" + key);
-                return ;
+                return;
             }
             finally
             {
                 Interlocked.Decrement(ref Redis_Cache.now_calc_num);
-                await RedisHelper.DelAsync(CalcLockString(key));
+                await redisHelper.DelAsync(CalcLockString(key));
             }
         }
-        
-        private void StreamToBytesArray(RecyclableMemoryStream stream,String cache_key,CSRedisClientPipe<string> pipe,string type)
+
+        private void StreamToBytesArray(RecyclableMemoryStream stream, String cache_key, PipelineHook pipe, string type)
         {
-            stream.Position = 0; 
+            stream.Position = 0;
             long size = stream.Length / bytesBufSize;
             if (bytesBufSize * size < stream.Length)
                 size++;

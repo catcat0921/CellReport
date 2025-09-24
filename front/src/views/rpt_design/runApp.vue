@@ -6,7 +6,7 @@
             :close-on-click-modal="false"   :fullscreen="true"
               direction="btt" append-to-body  
         > 
-        <div slot="title" class="dialog-footer">
+        <div slot="title" class="el-dialog__title">
           PDF导出和打印预览
           <el-button @click="paper_setting_dialogVisible = true">页面设置</el-button>
           <el-button @click="pdf_output_dialogVisible = false">取 消</el-button>
@@ -21,6 +21,8 @@
         </div>
 
     </el-dialog> 
+    <paperSetting :target_obj="paperSetting" @submit="paperSetting_submit" v-if="pdf_output_dialogVisible" class="report_define"
+    :visible.sync="paper_setting_dialogVisible" />
     <el-dialog v-draggable v-if="dync_item_dialogVisible" style="text-align: left;" 
           :visible.sync="dync_item_dialogVisible" 
           :close-on-click-modal="false" direction="btt" append-to-body v-bind="{...{'custom-class':'dync_dialog'},...dync_item.dialog_params||{} }"
@@ -29,8 +31,7 @@
         <widget-form-item  :self="dync_item"  >  </widget-form-item>
       </div>
     </el-dialog> 
-    <paperSetting :target_obj="paperSetting" @submit="paperSetting_submit"
-    :visible.sync="paper_setting_dialogVisible" />
+
     <el-popover trigger="click" v-if="!crisMobile && isShow && show_tips " style='position:fixed;z-index:5;right:10px;top:10px;'
       placement="top-start" title="提示信息" width="300">
       <el-button slot="reference" style="width: 40px;height: 40px;
@@ -159,7 +160,7 @@ export default {
         scale:{x:100,y:100,v:100},
         dync_item_dialogVisible:false,
         dync_item:{},
-        paperSetting:{pageSize_name:'A5',}
+        paperSetting:{pageSize_name:'A4',}
     }
   },
   watch:{
@@ -186,17 +187,27 @@ export default {
     },
     async paperSetting_submit(val){
       let pdf_data=await get_pdf(this.result,val)
+      if(pdf_data.errcode==1){
+        this.$message.error(pdf_data.message);
+        return
+      }
       let datauri = URL.createObjectURL(pdf_data)
       document.getElementById("pdf_output").data =datauri
     },
     refresh_layout(ddd,that){  
+      return new Promise((resolve) =>{
       if(window.cellreport.after_run_before_show_report_hook){
-        if(window.cellreport.after_run_before_show_report_hook(that))
-        return
+        if(window.cellreport.after_run_before_show_report_hook(that)){
+          resolve()
+          return
+        }
       }
       if(that==undefined)
         that=this
       that.isShow=false
+      Object.keys(this.name_lable_map).forEach(key => {
+            delete this.name_lable_map[key];
+        });
       that.report_pane_show=false
       setTimeout(() => {
           that.isShow=true
@@ -208,12 +219,19 @@ export default {
                 that.scale.v=Math.min(that.scale.x,that.scale.y)
             }
             let ks=Object.keys(that.result.data)
-            if(ks.length>0)
+            if(ks.length>0){
               document.title = (that.result.data[ks[0]]?.title)   || document.title 
+              that.$set(that,'paperSetting',JSON.parse( that.result.data[ks[0]]?.paperSetting||`{"pageSize_name":"A4"}` ))
+             // debugger
+            }
             if(window.after_show_report_hook){window.after_show_report_hook(that)}
             if(window.cellreport.after_show_report_hook){window.cellreport.after_show_report_hook(that)}
+            setTimeout(() => {
+              resolve();
+            });
           });
       });
+    })
     },
     click_col_button(line_idx,col_idx){
       this.$set(this.mobile_col_button_arr[line_idx],'selected',col_idx)
@@ -407,6 +425,10 @@ export default {
     async export_pdf(){
       let _this=this
       let pdf_data=await get_pdf(this.result)
+      if(pdf_data.errcode==1){
+        this.$message.error(pdf_data.message);
+        return
+      }
       if(!window.cellreport.pdf_print)
           _this.pdf_output_dialogVisible=true
       _this.$nextTick(()=>{

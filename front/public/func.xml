@@ -151,6 +151,14 @@ col()
       单元格列表中 大于值1 小于 值2的有多少个
       是否相等：缺省为相等
     </function>
+    <function  name="sliding_sum( ,int.MinValue,0)" >
+      sliding_sum(求和单元格,左顶格,前面多少个,后面多少个)
+      不能用在交叉表的交叉点中
+      第一个参数：求和单元格 ，和当前公式的单元格必须是同一个左顶格。例子： c3[&lt;0&gt;]、c3[&lt;0&gt;]{} 、c3[&lt;0&gt;]
+      第二个参数，相对当前单元格前面多少个
+      第三个参数，相对当前单元格后面多少个
+      
+    </function>
 
     <function  name="@value" >本单元格的实际值</function>
     <function  name="floor()" >

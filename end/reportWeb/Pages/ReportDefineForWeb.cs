@@ -4,8 +4,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Azure.Core;
 using CellReport.core.expr;
 using CellReport.running;
 using Microsoft.AspNetCore.Http;
@@ -110,14 +112,31 @@ namespace CellReport
         public Func<string, string> lastSetParam = null;
         public Dictionary<String, Object> fixParamValueDict = new Dictionary<string, object>();
         public Dictionary<String, Object> fixDefaultParamValueDict = new Dictionary<string, object>();
+        private Dictionary<String, string> jsonParamValueDict = null;
         private String getFormValue(string name)
         {
-            if (!httpRequest.HasFormContentType)
-                return null;
-            if (httpRequest.Form.TryGetValue(name, out var ret))
-                return ret.ToString();
-            else
-                return null;
+            if (httpRequest.HasJsonContentType())
+            {
+                if (jsonParamValueDict == null)
+                {
+                    jsonParamValueDict = new Dictionary<string, string>();
+                    JsonElement json = httpRequest.ReadFromJsonAsync<JsonElement>().GetAwaiter().GetResult();
+                    foreach (var keyValuePair in json.EnumerateObject())
+                    {
+                        var key = keyValuePair.Name;
+                        var val = keyValuePair.Value.GetString();
+                        jsonParamValueDict.Add(key, val);
+                    }
+                }
+                if(jsonParamValueDict.TryGetValue(name, out var ret))
+                    return ret;
+            }
+            else if (httpRequest.HasFormContentType)
+            {
+                if (httpRequest.Form.TryGetValue(name, out var ret))
+                    return ret.ToString();
+            }
+            return null;
         }
         private String getQueryValue(string name)
         {
@@ -223,7 +242,6 @@ namespace CellReport
                 return;
             if (Report == null)
             {
-
                 Engine engine = new Engine(reportDefine);
                 await engine.calcReportAsync();
                 Report = engine.getResult();

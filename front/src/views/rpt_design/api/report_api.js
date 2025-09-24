@@ -372,6 +372,7 @@ export function run_one(_this,reportFilePath,_param_name_=null,loading_conf=null
         data.append(kv[0], kv[1]??'')    
     })
     let _fresh_ds=_this.queryForm._fresh_ds
+    delete _this.queryForm._fresh_ds
     let stage="开始"
     data.append("reportName", reportFilePath)
     data.append("_createFormParam", window.cellreport.exec_num==0)
@@ -389,201 +390,207 @@ export function run_one(_this,reportFilePath,_param_name_=null,loading_conf=null
       url:_this.in_exec_url.run_url,
       data,
       withCredentials: true
-    }).then(response_data => {
-        if(_this.reportName!=reportFilePath){
-            for(let k in _this.queryForm)
-                delete _this.queryForm[k]
-            for(let k in _this.clickedEle)
-                delete _this.clickedEle[k]
-            _this.allElementSet.clear()
-        }
-        delete _this.queryForm._fresh_ds
-        delete _this.queryForm._cur_page_num_
-        delete _this.queryForm._page_size_
-        _this.executed =true
-        stage="获取数据完成"
-        if(typeof(response_data)=='string')
-        {
-            try{
-                response_data=JSON.parse( response_data.substring( response_data.indexOf('{"errcode"')) )
-            }catch{
-                _this.$notify({title: '提示',message: response_data,duration: 0});
-                loading.hide(loading_conf)
-                return;
-            }
-        }
-        if(response_data.errcode && response_data.errcode ==1){
-            loading.hide(loading_conf)
-            if(tool.getObjType(_this.$alert)=='function')
-                _this.$alert(response_data);
-            else
-                alert(response_data);
-            return;
-        }
-        if(response_data.zb_var) //兼容老写法
-            response_data._zb_var_=response_data.zb_var
-        if(response_data._zb_var_ && response_data._zb_var_.watermark){
-            $(".mask_div").remove()
-            _this.watermark(response_data._zb_var_.watermark);
-        }
-        stage="步骤1"
-        response_data.form.forEach(ele=>{
-            let val=ele.value
-            if(ele.data_type=='date' && val!="")
-                val=new Date(ele.value).format("yyyy-MM-dd")
-            _this.$set(_this.queryForm,ele.name,val)
-            _this.$set(_this.queryForm_show,ele.name,false)
-        })
-        _this.result.fresh_dataset=Enumerable.from( Object.keys(response_data.dataSet??{})).select(x=>"数据集:"+x).toArray()
-        _this.result.fresh_report=Enumerable.from( Object.keys(response_data.data??{})).select(x=>"表格:"+x).toArray()
-        if(_param_name_!=null){
-            _this.result.dataSet=response_data.dataSet
-            _this.result.form=response_data.form
-            loading.hide(loading_conf)
-            return
-        }
-        else if(_fresh_ds){
-            Object.keys(response_data.dataSet??{}).forEach(x=>{
-                _this.result.dataSet[x]=response_data.dataSet[x]
-            })
-            Object.keys(response_data.data??{}).forEach(x=>{
-                _this.result.data[x]=response_data.data[x]
-            })
-            //Object.assign(_this.result.dataSet,response_data.dataSet)
-            //Object.assign(_this.result.data,response_data.data)
-        }
-        else{
-            Object.assign(_this.result,response_data)
-        }
-        stage="步骤2"
-        _this.last_js_cript=tool.load_css_js(_this.result.footer2,"report_back_css")
-        //let tool=require('../utils/util.js')
-        eval("(function(){\n"+_this.last_js_cript+"\n})()")
-        //_this.setTimeout_function=eval("(function(){\n return "+_this.setTimeout_function?.toString()+"\n})()")
-        if(_fresh_ds){
-            loading.hide(loading_conf)
-            return  
-        }
-            
-        if(_this.result.layout)
-        {
-            _this.layout.v=_this.result.layout
-        }
-        else
-        {
-            _this.layout.v=build_layout(
-                { HtmlText:Object.values(_this.result.data).filter(ele=>ele.type=="htmlText"),
-                grid:Object.values(_this.result.data).filter(ele=>["common",'large'].includes( ele.type))
-                } )
-        }
-        stage="步骤3"
-        //手机端列表头转按钮
-        if( (window.convert_col_to_button || window.cellreport.convert_col_to_button) && _this.layout.v.length==1 && Object.keys(_this.result.data).length==1)
-        { 
-            let grid_result
-            if( _this.layout.v[0].element.children && _this.layout.v[0].element.children.column.length==1 
-                && _this.layout.v[0].element.children.column[0].type=="luckySheetProxy"
-                && _this.result.data[_this.layout.v[0].element.children.column[0].gridName].optimize)
-            {
-                grid_result=_this.result.data[_this.layout.v[0].element.children.column[0].gridName]
-            }
-            else if(_this.layout.v[0].element.type=="luckySheetProxy" && _this.result.data[_this.layout.v[0].element.gridName].optimize){
-                grid_result=_this.result.data[_this.layout.v[0].element.gridName]
-            }
-
-            if(grid_result){
-                let all_t_arr=[]
-                for(let line_idx=grid_result.colName_lines[0];line_idx<grid_result.colName_lines[1];line_idx++){
-                    let start_str,start_col=Number.parseInt(grid_result.fix_cols)
-                    if(start_col<0) {
-                        start_col=1
-                        grid_result.fix_cols="1"
-                    }
-                    let t_arr=[]
-                    all_t_arr.push(t_arr)
-                    for(let col_idx=Number.parseInt(grid_result.fix_cols);col_idx<grid_result.tableData[line_idx].length;col_idx++)
-                    {//从当前行的固定列开始，按 单元格值 进行分段 存储。存放内容：当前段的内容，起始列和终止列，以及一个空数组
-                        if(start_str ==undefined)
-                            start_str=grid_result.tableData[line_idx][col_idx]
-                        else if(start_str!=grid_result.tableData[line_idx][col_idx]){
-                            t_arr.push({'txt':start_str,col_span:[start_col,col_idx-1],arr:[]})
-                            start_str=grid_result.tableData[line_idx][col_idx]
-                            start_col=col_idx
-                        }
-                    }
-                }
-                let col_vaild=(all_t_arr.length>0)
-                for(let idx=all_t_arr.length-1;idx>0;idx--) {
-                    if(idx==0)
-                    break
-                    let parent_idx=0
-                    for(let i=0;i<all_t_arr[idx].length;i++)
-                    {
-                        if(all_t_arr[idx-1][parent_idx]==undefined){
-                            col_vaild=false
-                            break
-                        }
-                        let parent_col_span=all_t_arr[idx-1][parent_idx].col_span
-                        let cur_span=all_t_arr[idx][i].col_span
-                        if(cur_span[0]<parent_col_span[0]){//下级和上级有交叉，就不能转换
-                            col_vaild=false
-                            break
-                        }
-                        //else if(cur_span[0]==parent_col_span[0] && cur_span[1]==parent_col_span[1] && all_t_arr.length==idx+1){
-                        //    continue// 如果现在是最后一行，并且下级和上级的列完全一样，就跳过去。
-                        //}
-                        else if(cur_span[0]>=parent_col_span[0] && cur_span[1]<=parent_col_span[1])
-                        {//下级分组能被上级分组完全包含，就加入上级分组的arr里面
-                            all_t_arr[idx-1][parent_idx].arr.push(all_t_arr[idx][i])
-                            continue
-                        }
-                        i--
-                        parent_idx++
-                    }
-                    if(col_vaild==false)
-                        break
-                }
-                if(col_vaild ){
-                    _this.mobile_col_arr=all_t_arr[0]
-                    for(let idx=0;idx<_this.mobile_col_arr.length;idx++)
-                    {
-                        deepTree(_this.mobile_col_arr[idx],null)
-                    } 
-                    _this.mobile_col_button_arr=[ {selected:0,arr:_this.mobile_col_arr}]  
-                    
-                    for(let line_idx=0;;line_idx++){
-                        let cur_item=_this.mobile_col_button_arr[line_idx]
-                        if( cur_item.arr[0].arr.length>0){
-                            _this.mobile_col_button_arr.push({selected:0,arr:_this.mobile_col_button_arr[line_idx].arr[0].arr })
-                        }
-                        else
-                            break
-                    }
-                    let last_item=Enumerable.from(_this.mobile_col_button_arr).last()
-                    if(last_item.arr.length>0 && last_item.arr[0].col_span[0]==last_item.arr[0].col_span[1])
-                    {
-                    if(Enumerable.from(_this.mobile_col_button_arr).all(x=>x.selected==0) && last_item.arr.length>1)
-                        last_item.selected=1
-                    }
-                    grid_result.mobile_col_button_arr=_this.mobile_col_button_arr
-                }
-            }
-        }
-        stage="步骤4"
-        //_this.isShow=false
-        //setTimeout(() => {
-        //    _this.isShow=true
-            _this.refresh_layout(null,_this)
-            loading.hide(loading_conf)
-            stage="完成"
-        //});
-    }).catch(error=> {
+    })
+    .then(response_data => { 
+        data_to_show(_this,response_data,reportFilePath,_param_name_,null,_fresh_ds)   
+    })
+    .catch(error=> {
         loading.hide(loading_conf) 
         //console.error(error)
         //let err_txt=error.response.data?.message||error.response.statusText
         _this.$alert(stage+"."+error.toString());
     })
+}
+export async function data_to_show(_this,response_data,reportFilePath=null,_param_name_=null,loading_conf=null,_fresh_ds=null){
+    if(loading_conf==null)
+        loading_conf=conf_loading_conf
+    if(_this.reportName!=reportFilePath){
+        for(let k in _this.queryForm)
+            delete _this.queryForm[k]
+        for(let k in _this.clickedEle)
+            delete _this.clickedEle[k]
+        _this.allElementSet.clear()
+    }
+    delete _this.queryForm._cur_page_num_
+    delete _this.queryForm._page_size_
+    _this.executed =true
+    let stage="获取数据完成"
+    if(typeof(response_data)=='string')
+    {
+        try{
+            response_data=JSON.parse( response_data.substring( response_data.indexOf('{"errcode"')) )
+        }catch{
+            _this.$notify({title: '提示',message: response_data,duration: 0});
+            loading.hide(loading_conf)
+            return;
+        }
+    }
+    if(response_data.errcode && response_data.errcode ==1){
+        loading.hide(loading_conf)
+        if(tool.getObjType(_this.$alert)=='function')
+            _this.$alert(response_data);
+        else
+            alert(response_data);
+        return;
+    }
+    if(response_data.zb_var) //兼容老写法
+        response_data._zb_var_=response_data.zb_var
+    if(response_data._zb_var_ && response_data._zb_var_.watermark){
+        $(".mask_div").remove()
+        _this.watermark(response_data._zb_var_.watermark);
+    }
+    stage="步骤1"
+    response_data.form.forEach(ele=>{
+        let val=ele.value
+        if(ele.data_type=='date' && val!="")
+            val=new Date(ele.value).format("yyyy-MM-dd")
+        _this.$set(_this.queryForm,ele.name,val)
+        _this.$set(_this.queryForm_show,ele.name,false)
+    })
+    _this.result.fresh_dataset=Enumerable.from( Object.keys(response_data.dataSet??{})).select(x=>"数据集:"+x).toArray()
+    _this.result.fresh_report=Enumerable.from( Object.keys(response_data.data??{})).select(x=>"表格:"+x).toArray()
     
+    if(_param_name_!=null){
+        _this.result.dataSet=response_data.dataSet
+        _this.result.form=response_data.form
+        loading.hide(loading_conf)
+        return
+    }
+    else if(_fresh_ds){
+        Object.keys(response_data.dataSet??{}).forEach(x=>{
+            _this.result.dataSet[x]=response_data.dataSet[x]
+        })
+        Object.keys(response_data.data??{}).forEach(x=>{
+            _this.result.data[x]=response_data.data[x]
+        })
+        //Object.assign(_this.result.dataSet,response_data.dataSet)
+        //Object.assign(_this.result.data,response_data.data)
+    }
+    else{
+        Object.assign(_this.result,response_data)
+    }
+    stage="步骤2"
+    _this.last_js_cript=tool.load_css_js(_this.result.footer2,"report_back_css")
+    //let tool=require('../utils/util.js')
+    eval("(function(){\n"+_this.last_js_cript+"\n})()")
+    //_this.setTimeout_function=eval("(function(){\n return "+_this.setTimeout_function?.toString()+"\n})()")
+    if(_fresh_ds){
+        loading.hide(loading_conf)
+        return  
+    }
+        
+    if(_this.result.layout)
+    {
+        _this.layout.v=_this.result.layout
+    }
+    else
+    {
+        _this.layout.v=build_layout(
+            { HtmlText:Object.values(_this.result.data).filter(ele=>ele.type=="htmlText"),
+            grid:Object.values(_this.result.data).filter(ele=>["common",'large'].includes( ele.type))
+            } )
+    }
+    stage="步骤3"
+    //手机端列表头转按钮
+    if( (window.convert_col_to_button || window.cellreport.convert_col_to_button) && _this.layout.v.length==1 && Object.keys(_this.result.data).length==1)
+    { 
+        let grid_result
+        if( _this.layout.v[0].element.children && _this.layout.v[0].element.children.column.length==1 
+            && _this.layout.v[0].element.children.column[0].type=="luckySheetProxy"
+            && _this.result.data[_this.layout.v[0].element.children.column[0].gridName].optimize)
+        {
+            grid_result=_this.result.data[_this.layout.v[0].element.children.column[0].gridName]
+        }
+        else if(_this.layout.v[0].element.type=="luckySheetProxy" && _this.result.data[_this.layout.v[0].element.gridName].optimize){
+            grid_result=_this.result.data[_this.layout.v[0].element.gridName]
+        }
+
+        if(grid_result){
+            let all_t_arr=[]
+            for(let line_idx=grid_result.colName_lines[0];line_idx<grid_result.colName_lines[1];line_idx++){
+                let start_str,start_col=Number.parseInt(grid_result.fix_cols)
+                if(start_col<0) {
+                    start_col=1
+                    grid_result.fix_cols="1"
+                }
+                let t_arr=[]
+                all_t_arr.push(t_arr)
+                for(let col_idx=Number.parseInt(grid_result.fix_cols);col_idx<grid_result.tableData[line_idx].length;col_idx++)
+                {//从当前行的固定列开始，按 单元格值 进行分段 存储。存放内容：当前段的内容，起始列和终止列，以及一个空数组
+                    if(start_str ==undefined)
+                        start_str=grid_result.tableData[line_idx][col_idx]
+                    else if(start_str!=grid_result.tableData[line_idx][col_idx]){
+                        t_arr.push({'txt':start_str,col_span:[start_col,col_idx-1],arr:[]})
+                        start_str=grid_result.tableData[line_idx][col_idx]
+                        start_col=col_idx
+                    }
+                }
+            }
+            let col_vaild=(all_t_arr.length>0)
+            for(let idx=all_t_arr.length-1;idx>0;idx--) {
+                if(idx==0)
+                break
+                let parent_idx=0
+                for(let i=0;i<all_t_arr[idx].length;i++)
+                {
+                    if(all_t_arr[idx-1][parent_idx]==undefined){
+                        col_vaild=false
+                        break
+                    }
+                    let parent_col_span=all_t_arr[idx-1][parent_idx].col_span
+                    let cur_span=all_t_arr[idx][i].col_span
+                    if(cur_span[0]<parent_col_span[0]){//下级和上级有交叉，就不能转换
+                        col_vaild=false
+                        break
+                    }
+                    //else if(cur_span[0]==parent_col_span[0] && cur_span[1]==parent_col_span[1] && all_t_arr.length==idx+1){
+                    //    continue// 如果现在是最后一行，并且下级和上级的列完全一样，就跳过去。
+                    //}
+                    else if(cur_span[0]>=parent_col_span[0] && cur_span[1]<=parent_col_span[1])
+                    {//下级分组能被上级分组完全包含，就加入上级分组的arr里面
+                        all_t_arr[idx-1][parent_idx].arr.push(all_t_arr[idx][i])
+                        continue
+                    }
+                    i--
+                    parent_idx++
+                }
+                if(col_vaild==false)
+                    break
+            }
+            if(col_vaild ){
+                _this.mobile_col_arr=all_t_arr[0]
+                for(let idx=0;idx<_this.mobile_col_arr.length;idx++)
+                {
+                    deepTree(_this.mobile_col_arr[idx],null)
+                } 
+                _this.mobile_col_button_arr=[ {selected:0,arr:_this.mobile_col_arr}]  
+                
+                for(let line_idx=0;;line_idx++){
+                    let cur_item=_this.mobile_col_button_arr[line_idx]
+                    if( cur_item.arr[0].arr.length>0){
+                        _this.mobile_col_button_arr.push({selected:0,arr:_this.mobile_col_button_arr[line_idx].arr[0].arr })
+                    }
+                    else
+                        break
+                }
+                let last_item=Enumerable.from(_this.mobile_col_button_arr).last()
+                if(last_item.arr.length>0 && last_item.arr[0].col_span[0]==last_item.arr[0].col_span[1])
+                {
+                if(Enumerable.from(_this.mobile_col_button_arr).all(x=>x.selected==0) && last_item.arr.length>1)
+                    last_item.selected=1
+                }
+                grid_result.mobile_col_button_arr=_this.mobile_col_button_arr
+            }
+        }
+    }
+    stage="步骤4"
+    //_this.isShow=false
+    //setTimeout(() => {
+    //    _this.isShow=true
+        await _this.refresh_layout(null,_this)
+        loading.hide(loading_conf)
+        stage="完成"
+    //});
 }
 function deepTree(cur_item,parent_item){
     for(let idx=0;idx<cur_item.arr.length;idx++)

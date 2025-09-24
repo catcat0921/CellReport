@@ -1,103 +1,4 @@
-﻿
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using Microsoft.AspNetCore.Mvc;
-using System.Text.Json;
-using CellReport.exporter;
-using Microsoft.AspNetCore.Authorization;
-using System.Collections;
-using System;
-using Microsoft.Extensions.Configuration;
-using CellReport.core.expr;
-using Microsoft.Data.Sqlite;
-using reportWeb.Model;
-using Serilog;
-using System.Configuration;
-using System.Data.Common;
-using System.Reflection;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http.Json;
-
-namespace reportWeb.Controllers
-{
-    public class PdfController : Controller
-    {
-        private IConfiguration configuration;
-        private static Object lock_obj = new();
-        private static ConstructorInfo Html2Pdf_ctor;
-        private IWebHostEnvironment env;
-        JsonSerializerOptions json_option;
-        public PdfController(IConfiguration configuration, IWebHostEnvironment env)
-        {
-            this.configuration = configuration;
-            this.env = env;
-            this.json_option = new JsonSerializerOptions()
-            {
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.Create(System.Text.Unicode.UnicodeRanges.All),
-                //System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-                WriteIndented = true
-            };
-        }
-        [HttpPost]
-        [AllowAnonymous]
-        public IActionResult Index(string report_obj, string paperSetting)
-        {
-            lock (lock_obj)
-            {
-                if (Html2Pdf_ctor == null)
-                {
-                    var loc = configuration["html2pdf_path"];//Path.GetDirectoryName(loc) + 
-                    if (String.IsNullOrWhiteSpace(loc))
-                        loc = env.WebRootPath + "/../html2pdf";
-                    var file_name = $@"{loc}/html2pdf.dll";
-                    if (!System.IO.File.Exists(file_name))
-                        return new JsonResult(new { errcode = 1, message = $"没有找到Html2Pdf.dll!需要在配置文件正确指定html2pdf_path(当前：{configuration["html2pdf_path"]})" }, json_option);
-                    var ass = System.Reflection.Assembly.LoadFrom(file_name);
-                    Html2Pdf_ctor = ass.GetType("cellreport.Html2Pdf").GetConstructors()[0];
-                }
-            }
-            PageSetup ps = null;
-
-            var json_root = JsonDocument.Parse(report_obj).RootElement;
-            var json_data = json_root.GetProperty("data");
-            var grid_list = json_data.EnumerateObject().Select(x => x.Name).ToList();
-            if (!string.IsNullOrEmpty(paperSetting) && "undefined" != paperSetting)
-                ps = JsonSerializer.Deserialize<PageSetup>(paperSetting);
-            if (ps == null)
-            {
-                if (json_data.GetProperty(grid_list[0]).TryGetProperty("paperSetting", out var paperSetting_str)
-                    && paperSetting_str.GetString() != null
-                    )
-                {
-                    ps = JsonSerializer.Deserialize<PageSetup>(paperSetting_str.GetString());
-                }
-                else
-                    ps = new PageSetup();
-            }
-            var LocalPort = HttpContext.Connection.LocalPort;
-            dynamic Html2Pdf = Html2Pdf_ctor.Invoke(new object[] { configuration, LocalPort });
-            Func<Object, List<int>, List<int>, Object> addTable = (rg, row_list, col_list) =>
-            {
-                return Html2Pdf.addTable(rg, row_list, col_list);
-            };
-            Func<Object, JsonElement, bool, bool> output_impl = (pdf_doc, item_Value, is_first) =>
-            {
-                var rg = new ReportGridJSON(item_Value, ps);
-                return rg.output(pdf_doc, ref is_first, addTable);
-            };
-            Html2Pdf.output_impl = output_impl;
-            byte[] result = Html2Pdf.buildPdf(json_root, ps) as byte[];
-            return File(result, "application/pdf");
-        }
-    }
-}
-//*/
-/*
- 	<PackageReference Include="itext7" Version="7.2.1" />
-	<PackageReference Include="itext7.pdfhtml" Version="4.0.1" />
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using iText.IO.Font;
@@ -106,10 +7,8 @@ using iText.Kernel.Geom;
 using iText.Kernel.Pdf;
 using iText.Layout;
 using iText.Layout.Element;
-using Microsoft.AspNetCore.Mvc;
+
 using System.Text.Json;
-using CellReport.exporter;
-using Microsoft.AspNetCore.Authorization;
 using System.Collections;
 using iText.Layout.Borders;
 using iText.Kernel.Colors;
@@ -122,46 +21,123 @@ using iText.Layout.Layout;
 using iText.Kernel.Pdf.Xobject;
 using System.Text.RegularExpressions;
 using iText.Html2pdf.Resolver.Font;
-using Microsoft.Extensions.Configuration;
+using iText.Layout.Renderer;
+using System.Collections.Concurrent;
 
-namespace reportWeb.Controllers
+
+namespace cellreport
 {
-    public class PdfController : Controller
+    public class Program
     {
-        private IConfiguration configuration;
-        public PdfController(IConfiguration configuration)
+        public static void Main(string[] args)
+        {
+        }
+    }
+    public class Html2Pdf
+    {        /// <summary>
+             /// 常用中文字体中文名称到家族名称（Font Family Name）的对照表
+             /// 键（Key）：字体中文名称
+             /// 值（Value）：字体元数据中的家族名称（iText匹配font-family的依据）
+             /// </summary>
+        public static readonly Dictionary<string, string> _chineseToFontFamilyMap = new Dictionary<string, string>
+        {
+            { "宋体", "SimSun" },
+            { "新宋体", "NSimSun" },
+            { "黑体", "SimHei" },
+            { "微软雅黑", "Microsoft YaHei" },
+            { "微软雅黑UI", "Microsoft YaHei UI" },
+            { "楷体", "KaiTi" },
+            { "楷体_GB2312", "KaiTi_GB2312" },
+            { "华文隶书", "STLiti" },
+            { "华文魏碑", "STWeiBei" },
+            { "仿宋", "FangSong" },
+            { "仿宋_GB2312", "FangSong_GB2312" },
+            { "幼圆", "YouYuan" },
+            { "华文中宋", "STZhongsong" },
+            { "华文仿宋", "STFangsong" },
+            { "华文行楷", "STXingkai" },
+            { "华文楷体", "STKaiti" },
+            { "方正舒体", "FZShuTi" },
+            { "方正姚体", "FZYaoTi" }
+        };
+        /// <summary>
+        /// 处理font-family的值（可能包含多个字体名称）
+        /// </summary>
+        private static string ProcessFontFamilyValue(string fontValue)
+        {
+            string[] fontNames = fontValue.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+
+            for (int i = 0; i < fontNames.Length; i++)
+            {
+                string fontName = fontNames[i].Trim().Trim('\'').Trim('"');
+
+                if (IsChineseFontName(fontName) &&
+                    _chineseToFontFamilyMap.TryGetValue(fontName, out string familyName))
+                {
+                    fontNames[i] = familyName;
+                }
+            }
+
+            return string.Join(", ", fontNames);
+        }
+        // 改进的正则表达式，支持三种结尾情况：
+        // 1. 以分号结尾（font-family:宋体;）
+        // 2. 以引号结尾（font-family:宋体' 或 font-family:宋体"）
+        // 3. 以空格分隔其他属性（font-family:宋体 ...）
+        Regex font_regex = new Regex(
+            @"(font-family\s*:\s*)(['""]?)(.*?)\2\s*(?=[;'""]|\s|>)",
+            RegexOptions.IgnoreCase
+        );
+        /// <summary>
+        /// 判断是否为中文字体名称（包含中文字符）
+        /// </summary>
+        private static bool IsChineseFontName(string fontName)
+        {
+            // 匹配任何中文字符（包括简体、繁体等）
+            return Regex.IsMatch(fontName, @"[\u4e00-\u9fa5]");
+        }
+        private dynamic configuration;
+        private ConcurrentDictionary<string, PdfFont> font_cache = new ConcurrentDictionary<string, PdfFont>();
+        private static bool has_init = false;
+        private static Object lock_obj = new();
+        static FontProvider fontProvider= new DefaultFontProvider(true, true, false);
+        public Html2Pdf(Object configuration, int LocalPort)
         {
             this.configuration = configuration;
+            if (!has_init)
+            {
+                lock (lock_obj)
+                {
+                    if (!has_init)
+                    {
+                        PdfFontFactory.RegisterSystemDirectories();
+                        //fontProvider = new DefaultFontProvider(true, true, false);
+                        // 如果发现字体显示不对，就需要调整字体顺序。
+                        for (int idx = 0 ; idx < 1000; idx++)
+                        {
+                            var cur_font = this.configuration["pdf_fonts" + ":" + idx];
+                            if (cur_font == null)
+                                break;
+                            FontProgram fontProgram = FontProgramFactory.CreateFont(cur_font);
+                            fontProvider.AddFont(fontProgram);
+                        }
+                        fontProvider.AddSystemFonts();
+                        has_init = true;
+                    }
+                }
+            }
+            converterProperties = new ConverterProperties();
+            converterProperties.SetFontProvider(fontProvider);
+            converterProperties.SetCharset("utf-8");
+            converterProperties.SetBaseUri($"http://127.0.0.1:{LocalPort}/");
         }
-        [HttpPost]
-        [AllowAnonymous]
-        public IActionResult Index(string report_obj, string paperSetting)
+        public Func<Object, JsonElement, bool, bool> output_impl;
+        public byte[] buildPdf(JsonElement json_root, dynamic ps)
         {
-
-            PageSetup ps = null;
-            if (!string.IsNullOrEmpty(paperSetting) && "undefined" != paperSetting)
-                ps = JsonSerializer.Deserialize<PageSetup>(paperSetting);
-            //var report_str = System.IO.File.ReadAllText(@"C:\Users\Administrator\Desktop\Untitled-1.json");
-            return File(buildPdf(report_obj, ps), "application/pdf");
-        }
-
-        public byte[] buildPdf(string report_str, PageSetup ps)
-        {
-            var json_root = JsonDocument.Parse(report_str).RootElement;
             var json_data = json_root.GetProperty("data");
             //https://api.itextpdf.com/iText7/dotnet/latest/classi_text_1_1_layout_1_1_element_1_1_area_break.html
             var grid_list = json_data.EnumerateObject().Select(x => x.Name).ToList();
-            if (ps == null)
-            {
-                if (json_data.GetProperty(grid_list[0]).TryGetProperty("paperSetting", out var paperSetting_str)
-                    && paperSetting_str.GetString() != null
-                    )
-                {
-                    ps = JsonSerializer.Deserialize<PageSetup>(paperSetting_str.GetString());
-                }
-                else
-                    ps = new PageSetup();
-            }
+
             if (ps.pageSize_name != "自定义")
             {
                 PageSize _PageSize = typeof(PageSize).GetField(ps.pageSize_name.ToUpper()).GetValue(null) as PageSize;
@@ -176,40 +152,12 @@ namespace reportWeb.Controllers
             pdfDocument = new(writer);
             try
             {
-                default_font = CellReport.running.Template.getTemplate("template.xml").Get("FONT").content;
+                //default_font = CellReport.running.Template.getTemplate("template.xml").Get("FONT").content;
                 default_font = json_root.GetProperty("defaultsetting").GetProperty("FONT").GetString();
-                converterProperties = null;
+                
                 if (converterProperties == null)
                 {
-                    // 如果发现字体显示不对，就需要调整字体顺序。
-                    FontProvider fontProvider = new DefaultFontProvider(true, true, false);
-                    int idx = 0;
-                    for (; idx < 1000; idx++)
-                    {
-                        var cur_font = configuration["pdf_fonts" + ":" + idx];
-                        if (cur_font == null)
-                            break;
-                        FontProgram fontProgram = FontProgramFactory.CreateFont(cur_font);
-                        fontProvider.AddFont(fontProgram);
-                    }
-                    fontProvider.AddSystemFonts();
-                    //PdfFontFactory.RegisterDirectory("c:/windows/fonts");
-                    ////PdfFontFactory.RegisterDirectory("/usr/share/fonts");
-                    //foreach (var one in Directory.GetFiles("c:/windows/fonts"))
-                    //{
-                    //    
-                    //    if (one.EndsWith(".ttf") || one.EndsWith(".ttc"))
-                    //        fontProvider.AddFont(one);
-                    //}
-                    //String[] fonts = new string[] { "c:/windows/fonts/simfang.ttf" };
-
-
-
-
-                    converterProperties = new ConverterProperties();
-                    converterProperties.SetFontProvider(fontProvider);
-                    converterProperties.SetCharset("utf-8");
-                    converterProperties.SetBaseUri($"http://127.0.0.1:{HttpContext.Connection.LocalPort}/");
+                    
                 }
                 Document pdf_doc = new(pdfDocument, new PageSize(ps.pageSize_Width, ps.pageSize_Height)
                     , false);
@@ -219,8 +167,9 @@ namespace reportWeb.Controllers
                 bool is_first = true;
                 foreach (var item in json_data.EnumerateObject())
                 {
-                    var rg = new ReportGridJSON(item.Value, ps);
-                    rg.output(pdf_doc, ref is_first, addTable);
+                    //dynamic rg = ReportGridJSON.GetConstructors()[0].Invoke(new object[] { item.Value, ps, addTable });
+                    //rg.output(pdf_doc, ref is_first);
+                    is_first = this.output_impl(pdf_doc, item.Value, is_first);
                 }
                 add_header_footer(ps, pdfDocument, pdf_doc, json_root.GetProperty("_zb_var_"));
 
@@ -236,11 +185,11 @@ namespace reportWeb.Controllers
         }
         PdfDocument pdfDocument;
         PdfFont sysFont;
-        private static ConverterProperties converterProperties = null;
+        private ConverterProperties converterProperties = null;
 
         public string default_font { get; private set; }
 
-        private static Paragraph convert_html_to_paragraph(string html)
+        private Paragraph convert_html_to_paragraph(string html)
         {
             var retpp = new Paragraph();
             var t_list = HtmlConverter.ConvertToElements(html, converterProperties);
@@ -251,7 +200,7 @@ namespace reportWeb.Controllers
             return retpp;
         }
         private static Regex r = new(@"&\[(.*?)\]"); //[^\\]#.*#
-        private static Paragraph replace_var_to_Paragraph(string str, Dictionary<String, object> mark_dict = null)
+        private Paragraph replace_var_to_Paragraph(string str, Dictionary<String, object> mark_dict = null)
         {//&[页码]&[总页数]&[日期]&[时间]
             MatchCollection mc = r.Matches(str);//替换#xxx#为 ?,同时记录位置
             foreach (Match a in mc)
@@ -261,7 +210,7 @@ namespace reportWeb.Controllers
 
             return convert_html_to_paragraph(str);
         }
-        private void add_header_footer(PageSetup ps, PdfDocument pdf, Document pdf_doc, JsonElement zb_var)
+        private void add_header_footer(dynamic ps, PdfDocument pdf, Document pdf_doc, JsonElement zb_var)
         {
             zb_var.TryGetProperty("watermark", out var watermark);
 
@@ -385,7 +334,7 @@ namespace reportWeb.Controllers
             }
         }
 
-        private Table addTable(ReportGridJSON rg, List<int> row_list, List<int> col_list)
+        public Table addTable(dynamic rg, List<int> row_list, List<int> col_list)
         {
             List<BitArray> tableBitFlag = new();
             for (int i = 0; i < rg.tableData.Length; i++)
@@ -409,7 +358,7 @@ namespace reportWeb.Controllers
             pdf_table.StartNewRow();
             foreach (var colNo in col_list)
             {
-                var pdf_cell = new Cell()
+                var pdf_cell = new iText.Layout.Element.Cell()
                             .SetMinWidth(rg.columnlenArr[colNo]).SetMaxWidth(rg.columnlenArr[colNo])
                             .SetMinHeight(0).SetMaxHeight(0).SetBorder(Border.NO_BORDER)
                             .SetPadding(0);// 不设置为0 ，将导致高度和设置的不同 缺省padding =2
@@ -421,7 +370,7 @@ namespace reportWeb.Controllers
             {
                 var row = rg.tableData[rowNo];
                 pdf_table.StartNewRow();
-                Cell pdf_cell;
+                iText.Layout.Element.Cell pdf_cell;
                 //pdf_cell = new Cell()
                 //            .SetWidth(0).SetMaxWidth(0)
                 //            .SetHeight(rg.GetRowHeight(rowNo)).SetBorder(Border.NO_BORDER)
@@ -452,7 +401,7 @@ namespace reportWeb.Controllers
                     bool is_lastrow_split_cell = false;
                     if (r_c == null)
                     {
-                        pdf_cell = new Cell();
+                        pdf_cell = new iText.Layout.Element.Cell();
                     }
                     else
                     {
@@ -470,7 +419,7 @@ namespace reportWeb.Controllers
                             is_lastrow_split_cell = true;
                             rg.insert_merge(rowNo + rowSpan, colNo, r_c.rs - rowSpan, colSpan);
                         }
-                        pdf_cell = new Cell(rowSpan, colSpan);
+                        pdf_cell = new iText.Layout.Element.Cell(rowSpan, colSpan);
                         max_width = 0;// -(colSpan-1)*10f* rg.border_width;
                         for (var ci = 0; ci < colSpan; ci++)
                         {
@@ -481,13 +430,14 @@ namespace reportWeb.Controllers
                         {
                             max_height += rg.GetRowHeight(rowNo + ri);
                             for (var ci = 0; ci < colSpan; ci++)
-                            {
-                                tableBitFlag[r_c.r + ri]?.Set(r_c.c + ci, true);
+                            {//这里要用rowNo，因为清单报表的r_c.r 是原始单元格的。r_c.c也应该改为 colNO 
+                                tableBitFlag[rowNo + ri]?.Set(colNo + ci, true);
                             }
                         }
                     }
                     pdf_cell.SetBorder(Border.NO_BORDER);
                     float cur_font_size = 0;
+                    string cur_font_family = default_font;
                     foreach (var one_style in rg.find_style(rowNo, colNo))
                     {
                         switch (one_style.Key)
@@ -499,7 +449,14 @@ namespace reportWeb.Controllers
                                 pdf_cell.SetFontColor(new DeviceRgb(System.Drawing.ColorTranslator.FromHtml(one_style.Value)));
                                 break;
                             case "font-family":
-                                //ret["font-family"] = one_pair[1];
+                                cur_font_family = one_style.Value;
+                                if (!font_cache.TryGetValue(one_style.Value, out PdfFont font))
+                                {
+                                    font = PdfFontFactory.CreateRegisteredFont(one_style.Value, PdfEncodings.IDENTITY_H, PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED, true);
+                                    font_cache.TryAdd(one_style.Value, font);
+                                }
+                                pdf_cell.SetFont(font);
+                                //pdf_cell.SetFontFamily(one_style.Value);
                                 break;
                             case "FONT-SIZE":
                                 cur_font_size = float.Parse(one_style.Value);
@@ -574,21 +531,50 @@ namespace reportWeb.Controllers
                     IBlockElement cur_pp = null;
                     var cur_str = cell_value == null ? "" : cell_value.ToString();
                     cur_str = (String.IsNullOrWhiteSpace(cur_str) ? "<span>&nbsp;</span>" : cur_str);
-                    System.Web.HttpUtility.HtmlDecode(cur_str);
-                    if (cur_str.StartsWith("<"))
+                    //System.Web.HttpUtility.HtmlDecode(cur_str);
+                    if (rg.auto_line_height || cur_str.StartsWith("<"))
                     {
+                        if (!font_cache.TryGetValue(cur_font_family, out PdfFont font))
+                        {
+                            font = PdfFontFactory.CreateRegisteredFont(cur_font_family, PdfEncodings.IDENTITY_H, PdfFontFactory.EmbeddingStrategy.PREFER_EMBEDDED, true);
+                            font_cache.TryAdd(cur_font_family, font);
+                        }
                         var t_str = cur_str.Replace("width:100%", $"width:{max_width}pt").Replace("height:100%", $"height:{max_height}pt");
-                        var t_list = HtmlConverter.ConvertToElements($"<div style='font-size:{cur_font_size}pt;width:{max_width}pt;height:{max_height}pt'>{t_str}</div>", converterProperties);
+                        var wrap = rg.auto_line_height?"white-space: wrap;word-wrap: break-word;":"";
+                        var html = $"<div style='{wrap}font-size:{cur_font_size}pt;width:{max_width}pt;max-height:{0}pt;line-height:normal;font-family:{cur_font_family}'>{t_str}</div>";
+
+                        // 替换匹配到的内容
+                        var ttt = font_regex.Replace(html, match =>
+                        {
+                            // 匹配组说明：
+                            // Group 1: "font-family: " 部分
+                            // Group 2: 字体名称的引号（可能为空）
+                            // Group 3: 字体名称内容
+                            string fontContent = match.Groups[3].Value;
+                            string processedContent = ProcessFontFamilyValue(fontContent);
+
+                            // 仅替换字体内容，保留原始的引号和结尾格式
+                            return $"{match.Groups[1].Value}{match.Groups[2].Value}{processedContent}{match.Groups[2].Value}";
+                        });
+
+
+                        var t_list = HtmlConverter.ConvertToElements(ttt, converterProperties);
+
                         if (t_list.Count == 1 && t_list[0] is IBlockElement)
                         {
-                            cur_pp = (t_list[0] as iText.Layout.Element.Div).SetFont(sysFont).SetFontSize(cur_font_size);
-                            //(t_list[0] as iText.Layout.Element.Div).SetFontFamily(default_font).SetFontSize(11).GetRenderer();
-                            //cur_pp.SetProperty(Property.AUTO_SCALE,)
-                            //cur_pp.SetProperty(Property.HEIGHT, max_height);
-                            //cur_pp.SetProperty(Property.WIDTH, max_width);
+                            iText.Layout.Font.FontProvider fontProvider = new FontProvider(cur_font_family);
+                            //(t_list[0] as iText.Layout.Element.Div).SetProperty(91,curFont);
+                            cur_pp = (t_list[0] as iText.Layout.Element.Div).SetFont(font).SetFontSize(cur_font_size);
+
                         }
                         else
                             cur_pp = new Paragraph(cur_str);
+                        //HtmlCellHeightCalculator calculator = new HtmlCellHeightCalculator();
+                        //float divHeight = calculator.CalculateHtmlDivHeight(t_str2, max_width);
+                        //HtmlInTableCellHeightCalculator calculator2 = new();
+                        //float divHeight2 = calculator2.CalculateHtmlInCellHeight(t_str2, max_width);
+                        //pdf_cell.SetHeight((float)(divHeight * 0.5));
+
                     }
                     else
                     {
@@ -599,14 +585,12 @@ namespace reportWeb.Controllers
                             //    pdf_cell.SetFontSize(new_font_size);
                         }
                         cur_pp = new Paragraph(cur_str);
-                        if (cur_str == "ⓧ")
-                            pdf_cell.SetFont(sysFont);
                     }
                     pdf_cell.Add(cur_pp)
                             //replace_var_to_Paragraph(cell_value.ToString(),0,0)
                             .SetMinWidth(max_width - deta).SetMaxWidth(max_width - deta);
-                    if (rg.auto_line_height == false)
-                        pdf_cell.SetMinHeight(max_height - deta).SetMaxHeight(max_height - deta);
+                    //if (rg.auto_line_height == false)
+                    pdf_cell.SetMinHeight(max_height - deta).SetMaxHeight(max_height - deta);
                     pdf_cell.SetPadding(0)// 不设置为0 ，将导致高度和设置的不同 缺省padding =2
                                           .SetMargin(0)
 
@@ -618,7 +602,6 @@ namespace reportWeb.Controllers
 
             return pdf_table;
         }
-
         private float shrinkFontSize(string content, float width, float height)
         {
             Text lineTxt = new Text(content);
@@ -664,5 +647,227 @@ namespace reportWeb.Controllers
             return fontSizeL;
         }
     }
+
+    public class HtmlCellHeightCalculator
+    {
+        private ConverterProperties converterProperties;
+        public HtmlCellHeightCalculator()
+        {
+            this.converterProperties = new();
+        }
+        // 主方法：计算HTML内容在指定宽度下的高度
+        public float CalculateHtmlDivHeight(string htmlContent, float cellWidth)
+        {
+            // 提取HTML中的边距信息
+            var margins = ExtractMargins(htmlContent);
+
+            // 创建临时文档用于布局计算
+            using (var ms = new MemoryStream())
+            using (var writer = new PdfWriter(ms))
+            using (var pdfDoc = new PdfDocument(writer))
+            {
+                // 设置页面宽度与单元格宽度一致
+                var doc = new Document(pdfDoc, new PageSize(cellWidth, PageSize.A4.GetHeight()));
+
+                // 转换HTML为iText元素
+                var elements = HtmlConverter.ConvertToElements(htmlContent, converterProperties);
+
+                if (elements.Count == 0) return 0;
+
+                // 获取第一个元素（通常是Div）
+                var div = elements[0] as Div;
+                if (div == null) return 0;
+
+                // 应用边距
+                ApplyMargins(div, margins);
+
+                // 设置宽度约束
+                div.SetWidth(cellWidth - margins.TotalHorizontal);
+
+                // 使用布局监听捕获高度
+                var renderer = new HeightCapturingRenderer(div);
+                div.SetNextRenderer(renderer);
+
+                // 执行布局
+                doc.Add(div);
+                doc.Flush();
+
+                // 返回计算的高度（包含边距）
+                return renderer.CalculatedHeight + margins.TotalVertical;
+            }
+        }
+
+        // 提取HTML中的边距信息
+        private HtmlMargins ExtractMargins(string htmlContent)
+        {
+            var margins = new HtmlMargins();
+
+            // 简单的正则表达式提取margin和padding（实际应用中可能需要更复杂的解析）
+            var marginRegex = new Regex(@"margin\s*:\s*(\d+)(\w+)\s*(\d+)(\w+)\s*(\d+)(\w+)\s*(\d+)(\w+)", RegexOptions.IgnoreCase);
+            var paddingRegex = new Regex(@"padding\s*:\s*(\d+)(\w+)\s*(\d+)(\w+)\s*(\d+)(\w+)\s*(\d+)(\w+)", RegexOptions.IgnoreCase);
+
+            var marginMatch = marginRegex.Match(htmlContent);
+            var paddingMatch = paddingRegex.Match(htmlContent);
+
+            // 解析边距值（示例：假设单位为px）
+            if (marginMatch.Success)
+            {
+                margins.Top = ParseSize(marginMatch.Groups[1].Value, marginMatch.Groups[2].Value);
+                margins.Right = ParseSize(marginMatch.Groups[3].Value, marginMatch.Groups[4].Value);
+                margins.Bottom = ParseSize(marginMatch.Groups[5].Value, marginMatch.Groups[6].Value);
+                margins.Left = ParseSize(marginMatch.Groups[7].Value, marginMatch.Groups[8].Value);
+            }
+
+            if (paddingMatch.Success)
+            {
+                margins.PaddingTop = ParseSize(paddingMatch.Groups[1].Value, paddingMatch.Groups[2].Value);
+                margins.PaddingRight = ParseSize(paddingMatch.Groups[3].Value, paddingMatch.Groups[4].Value);
+                margins.PaddingBottom = ParseSize(paddingMatch.Groups[5].Value, paddingMatch.Groups[6].Value);
+                margins.PaddingLeft = ParseSize(paddingMatch.Groups[7].Value, paddingMatch.Groups[8].Value);
+            }
+
+            return margins;
+        }
+
+        // 解析尺寸单位（简化版，仅处理px和pt）
+        private float ParseSize(string value, string unit)
+        {
+            if (!float.TryParse(value, out var size)) return 0;
+
+            // 转换常见单位为pt（iText的默认单位）
+            switch (unit.ToLower())
+            {
+                case "px": return size * 0.75f; // 1px ≈ 0.75pt
+                case "pt": return size;
+                default: return size; // 简化处理，实际应用中需要更全面的单位转换
+            }
+        }
+
+        // 应用边距到iText元素
+        private void ApplyMargins(Div div, HtmlMargins margins)
+        {
+            div.SetMarginTop(margins.Top);
+            div.SetMarginRight(margins.Right);
+            div.SetMarginBottom(margins.Bottom);
+            div.SetMarginLeft(margins.Left);
+
+            div.SetPaddingTop(margins.PaddingTop);
+            div.SetPaddingRight(margins.PaddingRight);
+            div.SetPaddingBottom(margins.PaddingBottom);
+            div.SetPaddingLeft(margins.PaddingLeft);
+        }
+    }
+
+    // 高度捕获渲染器
+    public class HeightCapturingRenderer : DivRenderer
+    {
+        public float CalculatedHeight { get; private set; }
+
+        public HeightCapturingRenderer(Div modelElement) : base(modelElement) { }
+
+        public override LayoutResult Layout(LayoutContext layoutContext)
+        {
+            var result = base.Layout(layoutContext);
+
+            if (result.GetStatus() == LayoutResult.FULL ||
+                result.GetStatus() == LayoutResult.PARTIAL)
+            {
+                // 计算内容高度
+                var area = layoutContext.GetArea().GetBBox();
+                var occupiedArea = result.GetOccupiedArea().GetBBox();
+                CalculatedHeight = area.GetHeight() - occupiedArea.GetY() + occupiedArea.GetHeight();
+            }
+
+            return result;
+        }
+    }
+
+    // 边距信息类
+    public class HtmlMargins
+    {
+        public float Top { get; set; }
+        public float Right { get; set; }
+        public float Bottom { get; set; }
+        public float Left { get; set; }
+
+        public float PaddingTop { get; set; }
+        public float PaddingRight { get; set; }
+        public float PaddingBottom { get; set; }
+        public float PaddingLeft { get; set; }
+
+        public float TotalHorizontal => Left + Right + PaddingLeft + PaddingRight;
+        public float TotalVertical => Top + Bottom + PaddingTop + PaddingBottom;
+    }
+    public class HtmlInTableCellHeightCalculator
+    {
+        public float CalculateHtmlInCellHeight(string htmlContent, float cellWidth, float maxHeight = float.MaxValue)
+        {
+            using (var ms = new MemoryStream())
+            using (var writer = new PdfWriter(ms))
+            using (var pdfDoc = new PdfDocument(writer))
+            {
+                // 创建足够大的页面以容纳内容
+                var pageSize = new PageSize(cellWidth + 50, maxHeight); // 留出边距
+                var doc = new Document(pdfDoc, pageSize);
+
+                // 创建1x1表格
+                var table = new Table(UnitValue.CreatePercentArray(1));
+                table.SetWidth(cellWidth);
+
+                // 创建单元格并添加HTML内容
+                var cell = new Cell();
+                cell.SetPadding(0); // 移除单元格内边距，以便精确控制
+
+                // 转换HTML并添加到单元格
+                var converterProperties = new ConverterProperties();
+                var elements = HtmlConverter.ConvertToElements(htmlContent, converterProperties);
+
+                foreach (var element in elements)
+                {
+                    cell.Add((IElement)element as iText.Layout.Element.Div);
+                }
+
+                // 添加单元格到表格
+                table.AddCell(cell);
+
+                // 使用布局监听捕获表格高度
+                var renderer = new TableHeightCapturingRenderer(table);
+                table.SetNextRenderer(renderer);
+
+                // 添加表格到文档
+                doc.Add(table);
+                doc.Flush();
+
+                // 返回计算的表格高度
+                return renderer.CalculatedHeight;
+            }
+        }
+    }
+
+    // 表格高度捕获渲染器
+    public class TableHeightCapturingRenderer : TableRenderer
+    {
+        public float CalculatedHeight { get; private set; }
+
+        public TableHeightCapturingRenderer(Table modelElement) : base(modelElement) { }
+
+        public override LayoutResult Layout(LayoutContext layoutContext)
+        {
+            var result = base.Layout(layoutContext);
+
+            if (result.GetStatus() == LayoutResult.FULL ||
+                result.GetStatus() == LayoutResult.PARTIAL)
+            {
+                // 获取表格占用的区域
+                var occupiedArea = result.GetOccupiedArea();
+                var bbox = occupiedArea.GetBBox();
+
+                // 计算表格高度（包括边框）
+                CalculatedHeight = bbox.GetHeight();
+            }
+
+            return result;
+        }
+    }
 }
-*/
+

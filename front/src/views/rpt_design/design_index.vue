@@ -1049,7 +1049,7 @@ export default {
                 if(cell.ff) cell.cr['_FONT']=cell.ff
                 if(cell.bl!=undefined) cell.cr['_BOLD']=(cell?.bl==1?"True":"False")
                 cell.cr['_text-align']=(cell.ht=='0'?"center":(cell.ht=='1'?"left":'right'))
-                cell.cr['_vertical-align']=(cell.vt=='0'?"middle":(cell.vt=='1'?"top":'bottom'))
+                cell.cr['_vertical-align']=(cell.vt=='2'?"bottom":(cell.vt=='1'?"top":'middle'))
                 if(cell.it!=undefined) cell.cr['_ITALIC']=cell.it==1 ?"True" :"False"
                 if(cell.cl!=undefined) cell.cr['_UNDERLINE']=cell.cl==1 ?"True" :"False"
                 if(cell.f &&  cell.f.startsWith("=")) //
